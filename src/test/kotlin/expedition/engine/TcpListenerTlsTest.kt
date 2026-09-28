@@ -79,6 +79,55 @@ class TcpListenerTlsTest {
         }
     }
 
+    // I1: a client performing HTTPS endpoint identification (hostname verification)
+    // must accept the minted leaf, which requires a Subject Alternative Name.
+    @Test
+    fun `presents a leaf a hostname-verifying client accepts`() {
+        Security.addProvider(BouncyCastleProvider())
+        val (caKeystoreFile, caPassword) = writeCaKeystore(tempDir)
+        val certProvider = BurpCertificateProvider(caKeystoreFile, caPassword)
+        val upstreamKeystore = writeSelfSignedKeystore(tempDir, "upstream.test")
+
+        TlsEchoServer(upstreamKeystore.first, upstreamKeystore.second).use { echo ->
+            val boss = NioEventLoopGroup(1)
+            val worker = NioEventLoopGroup()
+            val registry = ConnectionRegistry()
+            val config = ListenerConfig("tls3", Protocol.TCP, "127.0.0.1", 0, "127.0.0.1", echo.port, TlsMode.MITM)
+            val listener = TcpListener(config, registry, boss, worker, certificateProvider = certProvider)
+            try {
+                val port = (listener.start().sync().channel().localAddress() as java.net.InetSocketAddress).port
+
+                val clientTrustStore = KeyStore.getInstance("PKCS12").apply {
+                    load(null, null)
+                    setCertificateEntry("expedition-ca", certProvider.caCertificate)
+                }
+                val tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())
+                tmf.init(clientTrustStore)
+                val sslContext = SSLContext.getInstance("TLS")
+                sslContext.init(null, tmf.trustManagers, null)
+
+                (sslContext.socketFactory.createSocket("127.0.0.1", port) as SSLSocket).use { client ->
+                    client.sslParameters = client.sslParameters.apply { endpointIdentificationAlgorithm = "HTTPS" }
+                    client.startHandshake()
+                    client.outputStream.write("secret".toByteArray())
+                    client.outputStream.flush()
+                    val buffer = ByteArray(6)
+                    var total = 0
+                    while (total < 6) {
+                        val read = client.inputStream.read(buffer, total, 6 - total)
+                        if (read < 0) break
+                        total += read
+                    }
+                    assertEquals("secret", String(buffer))
+                }
+            } finally {
+                listener.stop()
+                boss.shutdownGracefully().sync()
+                worker.shutdownGracefully().sync()
+            }
+        }
+    }
+
     @Test
     fun `closes the connection cleanly when the client does not trust the loaded CA`() {
         Security.addProvider(BouncyCastleProvider())

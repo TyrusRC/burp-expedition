@@ -1,6 +1,9 @@
 package expedition.tls
 
 import org.bouncycastle.asn1.x500.X500Name
+import org.bouncycastle.asn1.x509.Extension
+import org.bouncycastle.asn1.x509.GeneralName
+import org.bouncycastle.asn1.x509.GeneralNames
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter
 import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder
 import org.bouncycastle.jce.provider.BouncyCastleProvider
@@ -56,8 +59,17 @@ class BurpCertificateProvider(
             X500Name("CN=$host"),
             keyPair.public
         )
+        // A Subject Alternative Name is mandatory: clients that perform endpoint
+        // identification (browsers, HttpClient, curl) reject a cert on CN alone.
+        // NOTE: the SAN covers the listener's configured upstream host only; per-request
+        // SNI-based host selection is a v-next upgrade.
+        val sanType = if (isIpLiteral(host)) GeneralName.iPAddress else GeneralName.dNSName
+        builder.addExtension(Extension.subjectAlternativeName, false, GeneralNames(GeneralName(sanType, host)))
         val signer = JcaContentSignerBuilder("SHA256withRSA").build(caKey)
         val cert = JcaX509CertificateConverter().getCertificate(builder.build(signer))
         return cert to keyPair.private
     }
+
+    private fun isIpLiteral(host: String): Boolean =
+        host.matches(Regex("^\\d{1,3}(\\.\\d{1,3}){3}$")) || host.contains(':')
 }

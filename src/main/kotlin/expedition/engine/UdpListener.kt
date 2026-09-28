@@ -37,6 +37,12 @@ class UdpListener(
     private val sessions = UdpSessionTable<UdpSession>(idleTimeout)
     private var evictionTask: io.netty.util.concurrent.ScheduledFuture<*>? = null
 
+    // Upstream sockets bind on their own group so openSession can await the bind
+    // (write-after-bind ordering — an unbound datagram channel silently drops the first
+    // write) without hitting Netty's deadlock guard: openSession runs on `group`'s
+    // datagram event-loop thread, and awaiting a future on a DIFFERENT group's loop is safe.
+    private val upstreamGroup: EventLoopGroup = io.netty.channel.nio.NioEventLoopGroup(1)
+
     fun start(): ChannelFuture {
         val bootstrap = Bootstrap()
             .group(group)
@@ -62,9 +68,12 @@ class UdpListener(
     private fun openSession(clientAddress: InetSocketAddress): UdpSession {
         val connectionId = registry.openConnection(config.name, Protocol.UDP, clientAddress.toString(), upstreamAddress.toString())
         val upstreamBootstrap = Bootstrap()
-            .group(group)
+            .group(upstreamGroup)
             .channel(NioDatagramChannel::class.java)
             .handler(UdpUpstreamHandler(connectionId, messageGate, clientChannel!!, clientAddress))
+        // Safe to await: the upstream channel lives on upstreamGroup, not the datagram
+        // loop calling this, so the deadlock guard does not trip. The channel is fully
+        // bound before we return, so the first writeAndFlush is not dropped.
         val upstreamChannel = upstreamBootstrap.bind(0).sync().channel()
         return UdpSession(connectionId, upstreamChannel)
     }
@@ -83,6 +92,7 @@ class UdpListener(
             session.channel.close()
             registry.closeConnection(session.connectionId)
         }
+        upstreamGroup.shutdownGracefully().sync()
         clientChannel = null
     }
 }

@@ -13,15 +13,19 @@ class ReplaySender {
     }
 
     private fun replayTcp(host: String, port: Int, bytes: ByteArray, timeoutMillis: Long): ByteArray {
-        Socket(host, port).use { socket ->
-            socket.soTimeout = timeoutMillis.toInt()
-            socket.getOutputStream().write(bytes)
-            socket.getOutputStream().flush()
-            return try {
+        // Bound the connect itself: Socket(host, port) blocks until the OS SYN timeout
+        // (tens of seconds) on a dead/filtered upstream, and a refused connection throws.
+        // Both would otherwise propagate to the caller (the Swing EDT) — freeze or crash.
+        return try {
+            Socket().use { socket ->
+                socket.connect(InetSocketAddress(host, port), timeoutMillis.toInt())
+                socket.soTimeout = timeoutMillis.toInt()
+                socket.getOutputStream().write(bytes)
+                socket.getOutputStream().flush()
                 socket.getInputStream().readNBytesUpTo(bytes.size.coerceAtLeast(4096))
-            } catch (e: java.io.IOException) {
-                ByteArray(0)
             }
+        } catch (e: java.io.IOException) {
+            ByteArray(0)
         }
     }
 

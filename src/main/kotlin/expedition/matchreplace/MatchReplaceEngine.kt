@@ -1,7 +1,12 @@
 package expedition.matchreplace
 
+import java.util.concurrent.CopyOnWriteArrayList
+
 class MatchReplaceEngine {
-    private val rules = mutableListOf<MatchReplaceRule>()
+    // CopyOnWriteArrayList: rules are mutated from the Swing EDT (Match & Replace panel)
+    // while apply() iterates them from Netty worker threads. Copy-on-write gives each
+    // apply() a stable snapshot without locking and never throws ConcurrentModificationException.
+    private val rules = CopyOnWriteArrayList<MatchReplaceRule>()
 
     fun addRule(rule: MatchReplaceRule) {
         rules.add(rule)

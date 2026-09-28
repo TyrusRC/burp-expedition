@@ -25,6 +25,13 @@ class MessageGate(
                     forward(finalBytes)
                 }
             }
+        }.whenComplete { _, error ->
+            // Without this, any failure in rule application or the forward callback would
+            // complete the future exceptionally and be silently swallowed — the message
+            // dropped and that direction stalled with no trace. Record it so it is visible.
+            if (error != null) {
+                registry.recordMessage(connectionId, direction, ByteArray(0), "ERROR: ${error.cause?.message ?: error.message}")
+            }
         }
     }
 }

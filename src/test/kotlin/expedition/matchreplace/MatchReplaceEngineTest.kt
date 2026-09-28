@@ -1,9 +1,39 @@
 package expedition.matchreplace
 
 import org.junit.jupiter.api.Assertions.assertArrayEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 class MatchReplaceEngineTest {
+
+    // C1: rules must survive being modified on one thread while apply() iterates on another.
+    @Test
+    fun `apply is safe while rules are modified concurrently`() {
+        val engine = MatchReplaceEngine()
+        engine.addRule(MatchReplaceRule(0, MatchType.LITERAL_STRING, "a", "b"))
+        val stop = AtomicBoolean(false)
+        val error = AtomicReference<Throwable?>(null)
+        val applier = Thread {
+            try {
+                while (!stop.get()) engine.apply("aaa".toByteArray())
+            } catch (t: Throwable) {
+                error.set(t)
+            }
+        }
+        applier.start()
+        try {
+            repeat(5000) { i ->
+                engine.addRule(MatchReplaceRule(i + 1L, MatchType.LITERAL_STRING, "x", "y"))
+                engine.removeRule(i + 1L)
+            }
+        } finally {
+            stop.set(true)
+            applier.join()
+        }
+        assertNull(error.get(), "apply() threw under concurrent rule modification: ${error.get()}")
+    }
 
     @Test
     fun `applies a literal string rule`() {

@@ -92,6 +92,35 @@ class UdpListenerTest {
         group.shutdownGracefully().sync()
     }
 
+    // C2: openSession must not block the datagram event-loop thread waiting on the
+    // upstream bind. With a single-thread group the upstream channel registers to the
+    // same loop, so a .sync() there throws BlockingOperationException and drops the datagram.
+    @Test
+    fun `relays even when the event loop group has a single thread`() {
+        val group = NioEventLoopGroup(1)
+        val registry = ConnectionRegistry()
+        UdpEchoServer().use { echo ->
+            val config = ListenerConfig("u-single", Protocol.UDP, "127.0.0.1", 0, "127.0.0.1", echo.port)
+            val gate = MessageGate(registry, InterceptController(), MatchReplaceEngine()) { _, _, _, _ -> }
+            val listener = UdpListener(config, registry, group, gate)
+            try {
+                val port = startedPort(listener)
+                DatagramSocket().use { client ->
+                    val message = "ping".toByteArray()
+                    client.send(DatagramPacket(message, message.size, InetSocketAddress("127.0.0.1", port)))
+                    val response = ByteArray(4)
+                    val packet = DatagramPacket(response, response.size)
+                    client.soTimeout = 2000
+                    client.receive(packet)
+                    assertEquals("ping", String(response))
+                }
+            } finally {
+                listener.stop()
+            }
+        }
+        group.shutdownGracefully().sync()
+    }
+
     @Test
     fun `a failing session does not affect a concurrent working session`() {
         val group = NioEventLoopGroup()
