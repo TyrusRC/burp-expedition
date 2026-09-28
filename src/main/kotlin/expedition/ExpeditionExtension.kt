@@ -8,6 +8,7 @@ import expedition.dissector.DissectorRegistry
 import expedition.intercept.InterceptController
 import expedition.matchreplace.MatchReplaceEngine
 import expedition.registry.ConnectionRegistry
+import expedition.server.ControlApiServer
 import expedition.ui.ExpeditionTab
 
 class ExpeditionExtension : BurpExtension {
@@ -32,6 +33,35 @@ class ExpeditionExtension : BurpExtension {
         )
 
         api.userInterface().registerSuiteTab("Expedition", tab.component)
-        api.extension().registerUnloadingHandler(ExtensionUnloadingHandler { engine.shutdown() })
+
+        // Loopback control API (Praetor MCP). Disable with EXPEDITION_API_DISABLE=1;
+        // override the port with EXPEDITION_API_PORT (default 8112).
+        val apiServer = if (System.getenv("EXPEDITION_API_DISABLE") == "1") null else runCatching {
+            // Loopback default (secure). Override with EXPEDITION_API_HOST only
+            // when the MCP client is off-host (NAT-mode WSL reaches Burp on the
+            // Windows IP) — set it to the reachable bind IP, not 0.0.0.0.
+            val bindHost = System.getenv("EXPEDITION_API_HOST")?.takeIf { it.isNotBlank() } ?: "127.0.0.1"
+            val port = System.getenv("EXPEDITION_API_PORT")?.toIntOrNull() ?: 8112
+            ControlApiServer(
+                host = bindHost, port = port,
+                registry = registry, matchReplace = matchReplaceEngine,
+                startListener = { engine.startListener(it) },
+                stopListener = { engine.stopListener(it) },
+                runningListeners = { engine.runningListenerNames() },
+            ).also {
+                it.start()
+                api.logging().logToOutput("Expedition control API on $bindHost:$port")
+                if (it.isExposedBeyondLoopback()) api.logging().logToError(
+                    "WARNING: Expedition control API is bound to a NON-loopback host " +
+                    "($bindHost) — it can start proxies and send arbitrary bytes. " +
+                    "Ensure the interface is trusted / firewalled; prefer loopback + " +
+                    "WSL mirrored networking where possible.")
+            }
+        }.onFailure { api.logging().logToError("Expedition control API failed to start: ${it.message}") }.getOrNull()
+
+        api.extension().registerUnloadingHandler(ExtensionUnloadingHandler {
+            apiServer?.stop()
+            engine.shutdown()
+        })
     }
 }

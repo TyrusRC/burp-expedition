@@ -18,6 +18,9 @@ rewrite arbitrary TCP and UDP traffic from inside Burp.
 - **History** — connection and message log with connection replay.
 - **Dissector SPI** — a pluggable rendering/parsing interface (hex/string default);
   the extension point for protocol-specific decoders.
+- **Control API** — a loopback JSON REST API (`:8112`) to drive listeners, history,
+  the Repeater, and match-and-replace from automation (see below); exposed in
+  Praetor as the `tcp_proxy_*` MCP tools.
 
 ## Build
 
@@ -48,6 +51,43 @@ CA keystore you export once:
    enter its password.
 3. Add a listener with TLS mode **MITM**. Clients that already trust Burp's CA
    need no new certificate.
+
+## Control API (loopback, for automation / Praetor MCP)
+
+The extension serves a small JSON REST API on **`127.0.0.1:8112`** so an external
+client — the [Praetor](https://github.com/TyrusRC/praetor) MCP server — can drive
+the proxy programmatically: manage listeners, read captured connections/messages
+as evidence, run the Repeater, and manage match-and-replace rules.
+
+- **Security:** loopback-only by default; every request's `Host` header is checked
+  against literal loopback (or the configured bind host) — DNS-rebinding safe,
+  never resolves a hostname. The API can start proxies and send arbitrary bytes,
+  so it must never be exposed to an untrusted network.
+- **Env:** `EXPEDITION_API_PORT` (default `8112`); `EXPEDITION_API_DISABLE=1` to
+  turn it off; `EXPEDITION_API_HOST` to bind a non-loopback interface **only** when
+  the client is off-host (NAT-mode WSL reaching Burp on the Windows IP) — set it to
+  the reachable IP, not `0.0.0.0`; a warning is logged when bound beyond loopback.
+
+| Method + path | Purpose |
+|---|---|
+| `GET /status` | version, running listeners, connection/message counts |
+| `GET /listeners` · `POST /listeners` · `DELETE /listeners/{name}` | list / add+start / stop a listener |
+| `GET /connections` | captured connection summaries |
+| `GET /connections/{id}/messages` · `GET /messages?limit=N` | captured messages (hex + ASCII preview) |
+| `POST /repeat` | Repeater — send a raw TCP/UDP payload, read the response |
+| `GET /matchreplace` · `POST /matchreplace` · `DELETE /matchreplace/{id}` | list / add / remove rules |
+
+Example:
+
+```sh
+curl -s 127.0.0.1:8112/status
+curl -s -XPOST 127.0.0.1:8112/listeners \
+  -d '{"name":"redis","protocol":"tcp","bind_port":16379,"upstream_host":"10.0.0.5","upstream_port":6379}'
+curl -s -XPOST 127.0.0.1:8112/repeat \
+  -d '{"protocol":"tcp","host":"10.0.0.5","port":6379,"text":"PING\r\n"}'
+```
+
+In Praetor these are the `tcp_proxy_*`, `tcp_repeat`, and `tcp_match_replace_*` MCP tools.
 
 ## Stack
 
