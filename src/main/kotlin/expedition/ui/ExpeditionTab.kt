@@ -28,6 +28,7 @@ class ExpeditionTab(
     private var certificateProvider: BurpCertificateProvider? = null
 
     private val interceptPanel = InterceptPanel(interceptController, dissectorRegistry)
+    private val historyPanel = HistoryPanel(registry, dissectorRegistry)
 
     init {
         val listenersPanel = ListenersPanel(
@@ -36,7 +37,7 @@ class ExpeditionTab(
         )
         tabbedPane.addTab("Listeners", listenersPanel.component)
         tabbedPane.addTab("Intercept", interceptPanel.component)
-        tabbedPane.addTab("History", placeholderPanel("History UI — added in Task 15"))
+        tabbedPane.addTab("History", historyPanel.component)
         tabbedPane.addTab("Match & Replace", placeholderPanel("Match & Replace UI — added in Task 16"))
     }
 
