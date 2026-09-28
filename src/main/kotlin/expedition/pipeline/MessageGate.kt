@@ -14,6 +14,7 @@ class MessageGate(
 ) {
     fun process(connectionId: Long, direction: Direction, bytes: ByteArray, forward: (ByteArray) -> Unit) {
         interceptController.intercept(bytes) { heldId, heldBytes ->
+            interceptController.recordHeld(heldId, connectionId, direction.name, heldBytes)
             onHeldMessage(heldId, connectionId, direction, heldBytes)
         }.thenAccept { decision ->
             when (decision) {
