@@ -22,7 +22,7 @@ class ReplaySender {
                 socket.soTimeout = timeoutMillis.toInt()
                 socket.getOutputStream().write(bytes)
                 socket.getOutputStream().flush()
-                socket.getInputStream().readNBytesUpTo(bytes.size.coerceAtLeast(4096))
+                socket.getInputStream().readUntilIdle(timeoutMillis.toInt())
             }
         } catch (e: java.io.IOException) {
             ByteArray(0)
@@ -44,9 +44,22 @@ class ReplaySender {
         }
     }
 
-    private fun java.io.InputStream.readNBytesUpTo(max: Int): ByteArray {
-        val buffer = ByteArray(max)
-        val read = this.read(buffer)
-        return if (read <= 0) ByteArray(0) else buffer.copyOf(read)
+    /** Read until the peer goes idle (soTimeout) or closes, so a multi-segment
+     *  response isn't truncated to the first packet. Bounded to 1 MiB so a chatty
+     *  or streaming upstream can't grow the buffer without limit. */
+    private fun java.io.InputStream.readUntilIdle(soTimeoutMillis: Int): ByteArray {
+        val out = java.io.ByteArrayOutputStream()
+        val chunk = ByteArray(8192)
+        val cap = 1 shl 20
+        try {
+            while (out.size() < cap) {
+                val read = this.read(chunk)
+                if (read <= 0) break
+                out.write(chunk, 0, read)
+            }
+        } catch (_: java.net.SocketTimeoutException) {
+            // idle window elapsed with nothing more to read — return what we have.
+        }
+        return out.toByteArray()
     }
 }

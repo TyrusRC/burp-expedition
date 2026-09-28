@@ -76,6 +76,8 @@ as evidence, run the Repeater, and manage match-and-replace rules.
 | `GET /connections/{id}/messages` · `GET /messages?limit=N` | captured messages (hex + ASCII preview) |
 | `POST /repeat` | Repeater — send a raw TCP/UDP payload, read the response |
 | `GET /matchreplace` · `POST /matchreplace` · `DELETE /matchreplace/{id}` | list / add / remove rules |
+| `GET /intercept` · `POST /intercept/enable` | held-message queue + toggle live intercept |
+| `POST /intercept/{id}/forward` · `POST /intercept/{id}/drop` | forward (edited or unchanged) / drop a held message |
 
 Example:
 

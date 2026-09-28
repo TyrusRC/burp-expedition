@@ -45,6 +45,7 @@ class ExpeditionExtension : BurpExtension {
             ControlApiServer(
                 host = bindHost, port = port,
                 registry = registry, matchReplace = matchReplaceEngine,
+                intercept = interceptController,
                 startListener = { engine.startListener(it) },
                 stopListener = { engine.stopListener(it) },
                 runningListeners = { engine.runningListenerNames() },

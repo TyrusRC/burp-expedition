@@ -1,5 +1,6 @@
 package expedition.server
 
+import expedition.intercept.InterceptController
 import expedition.matchreplace.MatchReplaceEngine
 import expedition.registry.ConnectionRegistry
 import expedition.registry.Direction
@@ -20,6 +21,7 @@ class ControlApiIntegrationTest {
     private lateinit var server: ControlApiServer
     private lateinit var registry: ConnectionRegistry
     private lateinit var matchReplace: MatchReplaceEngine
+    private lateinit var intercept: InterceptController
     private var port = 0
     private val http = HttpClient.newHttpClient()
 
@@ -28,9 +30,10 @@ class ControlApiIntegrationTest {
         port = ServerSocket(0).use { it.localPort }
         registry = ConnectionRegistry()
         matchReplace = MatchReplaceEngine()
+        intercept = InterceptController()
         server = ControlApiServer(
             host = "127.0.0.1", port = port,
-            registry = registry, matchReplace = matchReplace,
+            registry = registry, matchReplace = matchReplace, intercept = intercept,
             startListener = {}, stopListener = {}, runningListeners = { setOf("redis") },
         )
         server.start()
@@ -127,6 +130,28 @@ class ControlApiIntegrationTest {
             assertTrue(r.body().contains(f), "repeat missing $f: ${r.body()}")
         assertTrue(r.body().contains("ABCD"), r.body())   // echoed back
         echo.close()
+    }
+
+    @Test
+    fun `intercept enable, list held, and forward`() {
+        assertEquals(200, post("/intercept/enable", """{"enabled":true}""").statusCode())
+        assertTrue(intercept.isEnabled())
+
+        // hold a message the way MessageGate would, then confirm the API sees + forwards it.
+        var held = -1L
+        val fut = intercept.intercept("PING".toByteArray()) { id, bytes ->
+            intercept.recordHeld(id, 7L, "CLIENT_TO_UPSTREAM", bytes); held = id
+        }
+        val state = get("/intercept").body()
+        assertTrue(state.contains("\"held\""))
+        assertTrue(state.contains("\"connection_id\":7"), state)
+
+        val fwd = post("/intercept/$held/forward", """{"text":"PONG"}""")
+        assertEquals(200, fwd.statusCode())
+        val decision = fut.get()
+        assertTrue(decision is expedition.intercept.InterceptDecision.Forward)
+        assertEquals("PONG", String((decision as expedition.intercept.InterceptDecision.Forward).bytes))
+        assertTrue(intercept.heldMessages().isEmpty())   // cleared after forward
     }
 
     @Test

@@ -4,6 +4,7 @@ import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
 import expedition.engine.ListenerConfig
 import expedition.engine.TlsMode
+import expedition.intercept.InterceptController
 import expedition.matchreplace.MatchReplaceEngine
 import expedition.matchreplace.MatchReplaceRule
 import expedition.matchreplace.MatchType
@@ -32,6 +33,7 @@ class ControlApiServer(
     private val port: Int,
     private val registry: ConnectionRegistry,
     private val matchReplace: MatchReplaceEngine,
+    private val intercept: InterceptController,
     private val startListener: (ListenerConfig) -> Unit,
     private val stopListener: (String) -> Unit,
     private val runningListeners: () -> Set<String>,
@@ -93,6 +95,13 @@ class ControlApiServer(
             method == "DELETE" && path.startsWith("/matchreplace/") -> {
                 matchReplace.removeRule(path.removePrefix("/matchreplace/").toLong())
                 send(ex, 200, Json.obj("ok" to true))
+            }
+            method == "GET" && path == "/intercept" -> interceptState(ex)
+            method == "POST" && path == "/intercept/enable" -> interceptEnable(ex)
+            method == "POST" && path.matches(Regex("/intercept/\\d+/forward")) ->
+                interceptForward(ex, path.split("/")[2].toLong())
+            method == "POST" && path.matches(Regex("/intercept/\\d+/drop")) -> {
+                intercept.drop(path.split("/")[2].toLong()); send(ex, 200, Json.obj("ok" to true))
             }
             else -> send(ex, 404, Json.obj("error" to "no route: $method $path"))
         }
@@ -178,6 +187,33 @@ class ControlApiServer(
         )
         matchReplace.addRule(rule)
         send(ex, 200, Json.obj("ok" to true, "id" to rule.id))
+    }
+
+    private fun interceptState(ex: HttpExchange) = send(ex, 200, Json.obj(
+        "enabled" to intercept.isEnabled(),
+        "held" to intercept.heldMessages().map { h -> mapOf(
+            "id" to h.id, "connection_id" to h.connectionId, "direction" to h.direction,
+            "length" to h.bytes.size, "hex" to toHex(h.bytes), "text" to preview(h.bytes),
+        ) },
+    ))
+
+    private fun interceptEnable(ex: HttpExchange) {
+        val o = Json.asObject(Json.parse(body(ex)))
+        intercept.setEnabled((o["enabled"] as? Boolean) ?: true)
+        send(ex, 200, Json.obj("ok" to true, "enabled" to intercept.isEnabled()))
+    }
+
+    private fun interceptForward(ex: HttpExchange, id: Long) {
+        val o = Json.asObject(Json.parse(body(ex)))
+        val hex = Json.str(o, "hex")
+        // Forward the edited bytes if supplied, else the original held bytes.
+        val edited = when {
+            hex.isNotBlank() -> fromHex(hex)
+            Json.str(o, "text").isNotEmpty() -> Json.str(o, "text").toByteArray(StandardCharsets.ISO_8859_1)
+            else -> intercept.heldBytes(id) ?: throw IllegalArgumentException("no held message $id")
+        }
+        intercept.forward(id, edited)
+        send(ex, 200, Json.obj("ok" to true, "forwarded_len" to edited.size))
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────
