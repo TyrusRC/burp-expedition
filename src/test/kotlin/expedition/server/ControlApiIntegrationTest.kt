@@ -2,6 +2,8 @@ package expedition.server
 
 import expedition.matchreplace.MatchReplaceEngine
 import expedition.registry.ConnectionRegistry
+import expedition.registry.Direction
+import expedition.registry.Protocol
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -83,5 +85,55 @@ class ControlApiIntegrationTest {
         val r = post("/listeners", """{"protocol":"tcp"}""")   // missing name/upstream
         assertEquals(400, r.statusCode())
         assertTrue(r.body().contains("error"))
+    }
+
+    // ── Full Python-client contract: assert the exact field names the MCP
+    //    tools (tools/expedition/tools.py) read back. ──────────────────────
+
+    @Test
+    fun `connections and messages expose the fields the MCP client reads`() {
+        val cid = registry.openConnection("redis", Protocol.TCP, "1.2.3.4:5555", "10.0.0.5:6379")
+        registry.recordMessage(cid, Direction.CLIENT_TO_UPSTREAM, "PING\r\n".toByteArray())
+
+        val conns = get("/connections").body()
+        // tcp_proxy_connections reads: id, protocol, client, upstream, listener, closed_at
+        for (f in listOf("\"id\"", "\"protocol\"", "\"client\"", "\"upstream\"", "\"listener\"", "\"closed_at\""))
+            assertTrue(conns.contains(f), "connections missing $f: $conns")
+
+        val msgs = get("/connections/$cid/messages").body()
+        // tcp_proxy_messages reads: id, connection_id, direction, length, hex, text
+        for (f in listOf("\"connection_id\"", "\"direction\"", "\"length\"", "\"hex\"", "\"text\""))
+            assertTrue(msgs.contains(f), "messages missing $f: $msgs")
+        assertTrue(msgs.contains("CLIENT_TO_UPSTREAM"))
+        assertTrue(get("/messages?limit=10").body().contains("\"hex\""))
+    }
+
+    @Test
+    fun `repeat sends bytes to a target and returns the response fields`() {
+        // local one-shot TCP echo
+        val echo = ServerSocket(0)
+        val echoPort = echo.localPort
+        Thread {
+            echo.accept().use { s ->
+                val b = s.getInputStream().readNBytes(4)
+                s.getOutputStream().write(b); s.getOutputStream().flush()
+            }
+        }.apply { isDaemon = true; start() }
+
+        val r = post("/repeat", """{"protocol":"tcp","host":"127.0.0.1","port":$echoPort,"text":"ABCD"}""")
+        assertEquals(200, r.statusCode())
+        // tcp_repeat reads: sent_len, response_len, response_hex, response_text
+        for (f in listOf("\"sent_len\"", "\"response_len\"", "\"response_hex\"", "\"response_text\""))
+            assertTrue(r.body().contains(f), "repeat missing $f: ${r.body()}")
+        assertTrue(r.body().contains("ABCD"), r.body())   // echoed back
+        echo.close()
+    }
+
+    @Test
+    fun `status exposes the exact fields the MCP client reads`() {
+        // tcp_proxy_status reads: version, running_listeners, connections, messages
+        val b = get("/status").body()
+        for (f in listOf("\"version\"", "\"running_listeners\"", "\"connections\"", "\"messages\""))
+            assertTrue(b.contains(f), "status missing $f: $b")
     }
 }
