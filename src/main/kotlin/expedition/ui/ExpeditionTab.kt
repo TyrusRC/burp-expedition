@@ -28,7 +28,11 @@ class ExpeditionTab(
     private var certificateProvider: BurpCertificateProvider? = null
 
     init {
-        tabbedPane.addTab("Listeners", placeholderPanel("Listeners UI — added in Task 13"))
+        val listenersPanel = ListenersPanel(
+            onStartListener, onStopListener,
+            onConfigureCertificateProvider = { provider -> certificateProvider = provider }
+        )
+        tabbedPane.addTab("Listeners", listenersPanel.component)
         tabbedPane.addTab("Intercept", placeholderPanel("Intercept UI — added in Task 14"))
         tabbedPane.addTab("History", placeholderPanel("History UI — added in Task 15"))
         tabbedPane.addTab("Match & Replace", placeholderPanel("Match & Replace UI — added in Task 16"))
