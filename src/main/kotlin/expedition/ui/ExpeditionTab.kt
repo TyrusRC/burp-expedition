@@ -27,13 +27,15 @@ class ExpeditionTab(
     @Volatile
     private var certificateProvider: BurpCertificateProvider? = null
 
+    private val interceptPanel = InterceptPanel(interceptController, dissectorRegistry)
+
     init {
         val listenersPanel = ListenersPanel(
             onStartListener, onStopListener,
             onConfigureCertificateProvider = { provider -> certificateProvider = provider }
         )
         tabbedPane.addTab("Listeners", listenersPanel.component)
-        tabbedPane.addTab("Intercept", placeholderPanel("Intercept UI — added in Task 14"))
+        tabbedPane.addTab("Intercept", interceptPanel.component)
         tabbedPane.addTab("History", placeholderPanel("History UI — added in Task 15"))
         tabbedPane.addTab("Match & Replace", placeholderPanel("Match & Replace UI — added in Task 16"))
     }
@@ -42,8 +44,8 @@ class ExpeditionTab(
 
     fun currentCertificateProvider(): BurpCertificateProvider? = certificateProvider
 
-    // Real behavior (populating the Intercept panel's held-message list) is wired in Task 14.
     fun onHeldMessage(heldMessageId: Long, connectionId: Long, direction: Direction, bytes: ByteArray) {
+        interceptPanel.onHeldMessage(heldMessageId, connectionId, direction, bytes)
     }
 
     fun onListenerError(listenerName: String, message: String) {
