@@ -16,6 +16,11 @@ class ExpeditionExtension : BurpExtension {
     override fun initialize(api: MontoyaApi) {
         val registry = ConnectionRegistry()
         val dissectorRegistry = DissectorRegistry()
+        // register() inserts at index 0 (last wins), so register the generic text
+        // dissector first and the specific Redis one last -> Redis is matched first,
+        // then text, then the hex-string default.
+        dissectorRegistry.register(expedition.dissector.LineProtocolDissector())
+        dissectorRegistry.register(expedition.dissector.RedisDissector())
         val matchReplaceEngine = MatchReplaceEngine()
         val interceptController = InterceptController()
 
