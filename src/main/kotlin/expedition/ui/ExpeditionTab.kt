@@ -8,9 +8,7 @@ import expedition.registry.ConnectionRegistry
 import expedition.registry.Direction
 import expedition.tls.BurpCertificateProvider
 import javax.swing.JComponent
-import javax.swing.JLabel
 import javax.swing.JOptionPane
-import javax.swing.JPanel
 import javax.swing.JTabbedPane
 
 class ExpeditionTab(
@@ -29,6 +27,7 @@ class ExpeditionTab(
 
     private val interceptPanel = InterceptPanel(interceptController, dissectorRegistry)
     private val historyPanel = HistoryPanel(registry, dissectorRegistry)
+    private val matchReplacePanel = MatchReplacePanel(matchReplaceEngine)
 
     init {
         val listenersPanel = ListenersPanel(
@@ -38,10 +37,8 @@ class ExpeditionTab(
         tabbedPane.addTab("Listeners", listenersPanel.component)
         tabbedPane.addTab("Intercept", interceptPanel.component)
         tabbedPane.addTab("History", historyPanel.component)
-        tabbedPane.addTab("Match & Replace", placeholderPanel("Match & Replace UI — added in Task 16"))
+        tabbedPane.addTab("Match & Replace", matchReplacePanel.component)
     }
-
-    private fun placeholderPanel(text: String): JComponent = JPanel().apply { add(JLabel(text)) }
 
     fun currentCertificateProvider(): BurpCertificateProvider? = certificateProvider
 
