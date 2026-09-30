@@ -14,6 +14,7 @@ import expedition.ui.ExpeditionTab
 class ExpeditionExtension : BurpExtension {
 
     override fun initialize(api: MontoyaApi) {
+        api.extension().setName("Burp Expedition v0.1.0")
         val registry = ConnectionRegistry()
         val dissectorRegistry = DissectorRegistry()
         // register() inserts at index 0 (last wins), so register lowest-priority first.

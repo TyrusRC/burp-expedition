@@ -66,7 +66,11 @@ object DefaultCa {
         tmp.createNewFile()
         restrictToOwner(tmp)   // the keystore holds a CA private key — not world-readable
         tmp.outputStream().use { ks.store(it, password) }
-        java.nio.file.Files.move(tmp.toPath(), p12.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE)
+        try {
+            java.nio.file.Files.move(tmp.toPath(), p12.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE)
+        } catch (e: java.nio.file.AtomicMoveNotSupportedException) {
+            java.nio.file.Files.move(tmp.toPath(), p12.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+        }
 
         // Export the cert (PEM) for installing into clients that don't trust Burp's CA.
         val pem = "-----BEGIN CERTIFICATE-----\n" +
