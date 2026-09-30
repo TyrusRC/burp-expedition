@@ -67,7 +67,11 @@ class TcpConnection(
             startTls?.onClientForwarded(finalBytes)
             val outBuf = Unpooled.wrappedBuffer(finalBytes)
             synchronized(pendingWrites) {
-                if (upstreamReady) upstreamChannel!!.writeAndFlush(outBuf) else pendingWrites.add(outBuf)
+                when {
+                    closed -> outBuf.release()                                  // dropped after close
+                    upstreamReady -> upstreamChannel!!.writeAndFlush(outBuf)
+                    else -> pendingWrites.add(outBuf)
+                }
             }
         }
     }
@@ -92,9 +96,9 @@ class TcpConnection(
     }
 
     fun close() {
-        if (closed) return
-        closed = true
         synchronized(pendingWrites) {
+            if (closed) return
+            closed = true
             pendingWrites.forEach { it.release() }   // release any never-flushed buffers
             pendingWrites.clear()
         }

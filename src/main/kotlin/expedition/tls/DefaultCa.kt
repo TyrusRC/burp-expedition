@@ -62,14 +62,18 @@ object DefaultCa {
         ks.setKeyEntry(ALIAS, keyPair.private, password, arrayOf(cert))
         // Write to a temp file, restrict perms before the key bytes land, then atomically rename —
         // so a crash mid-write never leaves a half-written keystore that later loads treat as valid.
-        val tmp = File(dir, "$CA_FILE.tmp")
-        tmp.createNewFile()
-        restrictToOwner(tmp)   // the keystore holds a CA private key — not world-readable
-        tmp.outputStream().use { ks.store(it, password) }
+        // Unique temp name (avoids a concurrent-first-run collision) + cleanup on any failure.
+        val tmp = File.createTempFile("expedition-ca", ".p12.tmp", dir)
         try {
-            java.nio.file.Files.move(tmp.toPath(), p12.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE)
-        } catch (e: java.nio.file.AtomicMoveNotSupportedException) {
-            java.nio.file.Files.move(tmp.toPath(), p12.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+            restrictToOwner(tmp)   // the keystore holds a CA private key — not world-readable
+            tmp.outputStream().use { ks.store(it, password) }
+            try {
+                java.nio.file.Files.move(tmp.toPath(), p12.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE)
+            } catch (e: java.nio.file.AtomicMoveNotSupportedException) {
+                java.nio.file.Files.move(tmp.toPath(), p12.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+            }
+        } finally {
+            tmp.delete()   // no-op once the move consumed it; removes the temp on a failed write
         }
 
         // Export the cert (PEM) for installing into clients that don't trust Burp's CA.

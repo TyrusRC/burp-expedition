@@ -58,10 +58,5 @@ class MysqlDissector : Dissector {
         return Packet(seq, bytes.copyOfRange(4, total), total)
     }
 
-    private fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it) }
 
-    private fun hexToBytes(hex: String): ByteArray {
-        val clean = hex.filterNot { it.isWhitespace() }
-        return ByteArray(clean.length / 2) { clean.substring(it * 2, it * 2 + 2).toInt(16).toByte() }
-    }
 }

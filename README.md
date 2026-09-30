@@ -10,16 +10,27 @@ rewrite arbitrary TCP and UDP traffic from inside Burp.
 
 ## Features
 
-- **TCP and UDP relay** — explicit-proxy listeners (bind host/port → upstream host/port).
-- **TLS MITM** — terminates client TLS with per-host leaf certificates signed by
-  your exported Burp CA, mirroring Burp's own HTTP proxy trust model.
-- **Intercept and edit** — hold, edit (hex/string), forward, or drop messages live.
-- **Match and replace** — ordered literal-bytes / literal-string / regex rules.
-- **History** — connection and message log with connection replay.
-- **Dissector SPI** — a pluggable rendering/parsing interface (hex/string default);
-  the extension point for protocol-specific decoders.
-- **Control API** — a loopback JSON REST API (`:18112`) to drive listeners, history,
-  the Repeater, and match-and-replace from automation (see below); exposed in
+**Proxy engine**
+- **TCP, UDP, and SOCKS5 listeners** — explicit-proxy (bind → fixed upstream), or a SOCKS5
+  listener that relays to each client-negotiated destination.
+- **Upstream proxy chaining** — route a listener's upstream leg through an outbound SOCKS5 proxy.
+- **TLS MITM & STARTTLS** — terminate client TLS with per-host leaf certs, or detect and
+  upgrade a plaintext→TLS negotiation (SMTP / IMAP / POP3 / PostgreSQL). Client-certificate
+  (mutual-TLS) support for upstreams that require one.
+- **Intercept and edit** — hold, edit (hex / string / decoded view), forward, or drop live.
+- **Match and replace** — literal-bytes / literal-string / regex rules, applied to the raw
+  bytes or to a dissector's decoded view (re-encoded with length/framing fixed).
+
+**Protocol dissectors** — pluggable SPI, auto-selected per message:
+hex/string, line/text, Redis (RESP), **Protobuf**, **DNS**, **MQTT**, **PostgreSQL**,
+**MySQL**, **MongoDB**, **WebSocket**, **Modbus/TCP**, **DNP3**.
+
+**Workflow**
+- **History** — connection/message log with connection replay, flow tagging, and JSON
+  session save / restore / export.
+- **Fuzzer** — replay a captured payload with mutations over TCP/UDP.
+- **Control API** — a loopback JSON REST API (`:18112`) to drive listeners, history, the
+  Repeater, intercept, and match-and-replace from automation (see below); exposed in
   Praetor as the `tcp_proxy_*` MCP tools.
 
 ## Build
@@ -77,7 +88,7 @@ as evidence, run the Repeater, and manage match-and-replace rules.
 | Method + path | Purpose |
 |---|---|
 | `GET /status` | version, running listeners, connection/message counts |
-| `GET /listeners` · `POST /listeners` · `DELETE /listeners/{name}` | list / add+start / stop a listener |
+| `GET /listeners` · `POST /listeners` · `DELETE /listeners/{name}` | list / add+start / stop a listener¹ |
 | `GET /connections` | captured connection summaries |
 | `GET /connections/{id}/messages` · `GET /messages?limit=N` | captured messages (hex + ASCII preview) |
 | `POST /repeat` | Repeater — send a raw TCP/UDP payload, read the response |
@@ -95,6 +106,9 @@ curl -s -XPOST 127.0.0.1:18112/repeat \
   -d '{"protocol":"tcp","host":"10.0.0.5","port":6379,"text":"PING\r\n"}'
 ```
 
+¹ `POST /listeners` also accepts `"protocol":"socks5"`, `"tls":"mitm"|"starttls"`,
+`"upstream_proxy":"host:port"`, and `"client_cert":"/path.p12"` + `"client_cert_password"`.
+
 In Praetor these are the `tcp_proxy_*`, `tcp_repeat`, and `tcp_match_replace_*` MCP tools.
 
 ## Stack
@@ -104,9 +118,11 @@ JUnit 5. Exact versions are in [`build.gradle.kts`](build.gradle.kts).
 
 ## Scope
 
-v1 is explicit-proxy only (no transparent/OS-level redirection). UDP listeners
-are plaintext (no TLS). Only the hex/string dissector ships; the SPI is the seam
-for protocol-specific ones.
+Explicit-proxy only — clients are pointed at a listener directly or routed via SOCKS5;
+no transparent/OS-level redirection. UDP listeners are plaintext (no TLS/STARTTLS). The
+dissectors decode the common cases per protocol; anything beyond their documented editable
+fields falls back to hex. Pure-JVM (Nio transport only), so it runs the same on Linux,
+macOS, and Windows.
 
 ## License
 

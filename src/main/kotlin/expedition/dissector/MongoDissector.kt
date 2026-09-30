@@ -47,10 +47,5 @@ class MongoDissector : Dissector {
         return Header(length, le(4), le(8), opCode)
     }
 
-    private fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it) }
 
-    private fun hexToBytes(hex: String): ByteArray {
-        val clean = hex.filterNot { it.isWhitespace() }
-        return ByteArray(clean.length / 2) { clean.substring(it * 2, it * 2 + 2).toInt(16).toByte() }
-    }
 }
