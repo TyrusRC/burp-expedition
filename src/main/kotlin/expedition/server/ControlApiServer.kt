@@ -37,6 +37,7 @@ class ControlApiServer(
     private val startListener: (ListenerConfig) -> Unit,
     private val stopListener: (String) -> Unit,
     private val runningListeners: () -> Set<String>,
+    private val startSocks5Listener: (expedition.engine.Socks5ListenerConfig) -> Unit = {},
     private val replaySender: ReplaySender = ReplaySender(),
     private val version: String = "0.1.0",
 ) {
@@ -117,14 +118,42 @@ class ControlApiServer(
 
     private fun addListener(ex: HttpExchange) {
         val o = Json.asObject(Json.parse(body(ex)))
+        val name = Json.str(o, "name").ifBlank { throw IllegalArgumentException("name required") }
+        val bindHost = Json.str(o, "bind_host", "127.0.0.1")
+        val bindPort = Json.int(o, "bind_port").also { require(it in 1..65535) { "bind_port 1-65535" } }
+
+        // SOCKS5 dynamic listener: no fixed upstream (destination negotiated per connection).
+        if (Json.str(o, "protocol", "TCP").equals("socks5", true)) {
+            startSocks5Listener(expedition.engine.Socks5ListenerConfig(name, bindHost, bindPort))
+            send(ex, 200, Json.obj("ok" to true, "name" to name)); return
+        }
+
+        val tlsMode = when (Json.str(o, "tls", "none").lowercase()) {
+            "mitm" -> TlsMode.MITM
+            "starttls" -> TlsMode.STARTTLS
+            else -> TlsMode.NONE
+        }
+        val proxyStr = Json.str(o, "upstream_proxy")
+        val proxy = if (proxyStr.isBlank()) null else {
+            val idx = proxyStr.lastIndexOf(':')
+            require(idx > 0) { "upstream_proxy must be host:port" }
+            expedition.engine.UpstreamProxy(proxyStr.substring(0, idx),
+                proxyStr.substring(idx + 1).toInt().also { require(it in 1..65535) { "upstream_proxy port 1-65535" } })
+        }
+        val certPath = Json.str(o, "client_cert")
+        val clientAuth = if (certPath.isBlank()) null
+            else expedition.engine.UpstreamClientAuth(java.io.File(certPath), Json.str(o, "client_cert_password").toCharArray())
+
         val cfg = ListenerConfig(
-            name = Json.str(o, "name").ifBlank { throw IllegalArgumentException("name required") },
+            name = name,
             protocol = Protocol.valueOf(Json.str(o, "protocol", "TCP").uppercase()),
-            bindHost = Json.str(o, "bind_host", "127.0.0.1"),
-            bindPort = Json.int(o, "bind_port").also { require(it in 1..65535) { "bind_port 1-65535" } },
+            bindHost = bindHost,
+            bindPort = bindPort,
             upstreamHost = Json.str(o, "upstream_host").ifBlank { throw IllegalArgumentException("upstream_host required") },
             upstreamPort = Json.int(o, "upstream_port").also { require(it in 1..65535) { "upstream_port 1-65535" } },
-            tlsMode = if (Json.str(o, "tls", "none").equals("mitm", true)) TlsMode.MITM else TlsMode.NONE,
+            tlsMode = tlsMode,
+            upstreamClientAuth = clientAuth,
+            upstreamProxy = proxy,
         )
         startListener(cfg)
         send(ex, 200, Json.obj("ok" to true, "name" to cfg.name))

@@ -43,7 +43,8 @@ class ExpeditionExtension : BurpExtension {
         tab = ExpeditionTab(
             registry, dissectorRegistry, matchReplaceEngine, interceptController,
             onStartListener = { config -> engine.startListener(config) },
-            onStopListener = { name -> engine.stopListener(name) }
+            onStopListener = { name -> engine.stopListener(name) },
+            onStartSocks5Listener = { config -> engine.startSocks5Listener(config) }
         )
 
         api.userInterface().registerSuiteTab("Expedition", tab.component)
@@ -63,6 +64,7 @@ class ExpeditionExtension : BurpExtension {
                 startListener = { engine.startListener(it) },
                 stopListener = { engine.stopListener(it) },
                 runningListeners = { engine.runningListenerNames() },
+                startSocks5Listener = { engine.startSocks5Listener(it) },
             ).also {
                 it.start()
                 api.logging().logToOutput("Expedition control API on $bindHost:$port")

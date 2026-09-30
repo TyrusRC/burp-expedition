@@ -2,6 +2,7 @@ package expedition.ui
 
 import expedition.dissector.DissectorRegistry
 import expedition.engine.ListenerConfig
+import expedition.engine.Socks5ListenerConfig
 import expedition.intercept.InterceptController
 import expedition.matchreplace.MatchReplaceEngine
 import expedition.registry.ConnectionRegistry
@@ -17,7 +18,8 @@ class ExpeditionTab(
     private val matchReplaceEngine: MatchReplaceEngine,
     private val interceptController: InterceptController,
     private val onStartListener: (ListenerConfig) -> Unit,
-    private val onStopListener: (String) -> Unit
+    private val onStopListener: (String) -> Unit,
+    private val onStartSocks5Listener: (Socks5ListenerConfig) -> Unit = {}
 ) {
     private val tabbedPane = JTabbedPane()
     val component: JComponent = tabbedPane
@@ -32,7 +34,8 @@ class ExpeditionTab(
     init {
         val listenersPanel = ListenersPanel(
             onStartListener, onStopListener,
-            onConfigureCertificateProvider = { provider -> certificateProvider = provider }
+            onConfigureCertificateProvider = { provider -> certificateProvider = provider },
+            onStartSocks5Listener = onStartSocks5Listener
         )
         tabbedPane.addTab("Listeners", listenersPanel.component)
         tabbedPane.addTab("Intercept", interceptPanel.component)

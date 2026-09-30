@@ -64,4 +64,44 @@ class ListenerFormValidationTest {
         )
         assertTrue(result.isSuccess)
     }
+
+    @Test
+    fun `parses an upstream proxy host and port`() {
+        val result = ListenerFormValidation.validate(
+            "l1", Protocol.TCP, "127.0.0.1", "9000", "h", "443", TlsMode.NONE, emptySet(),
+            upstreamProxy = "127.0.0.1:1080"
+        )
+        assertTrue(result.isSuccess)
+        val proxy = result.getOrThrow().upstreamProxy!!
+        assertEquals("127.0.0.1", proxy.host)
+        assertEquals(1080, proxy.port)
+    }
+
+    @Test
+    fun `rejects a malformed upstream proxy`() {
+        val result = ListenerFormValidation.validate(
+            "l1", Protocol.TCP, "127.0.0.1", "9000", "h", "443", TlsMode.NONE, emptySet(),
+            upstreamProxy = "nope"
+        )
+        assertTrue(result.isFailure)
+    }
+
+    @Test
+    fun `sets upstream client auth from a keystore path`() {
+        val result = ListenerFormValidation.validate(
+            "l1", Protocol.TCP, "127.0.0.1", "9000", "h", "443", TlsMode.NONE, emptySet(),
+            clientCertPath = "/tmp/client.p12", clientCertPassword = "pw".toCharArray()
+        )
+        assertTrue(result.isSuccess)
+        assertNotNull(result.getOrThrow().upstreamClientAuth)
+    }
+
+    @Test
+    fun `requires a CA keystore for STARTTLS too`() {
+        val result = ListenerFormValidation.validate(
+            "l1", Protocol.TCP, "127.0.0.1", "9000", "h", "443", TlsMode.STARTTLS, emptySet(),
+            certificateProviderConfigured = false
+        )
+        assertTrue(result.isFailure)
+    }
 }

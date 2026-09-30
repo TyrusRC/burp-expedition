@@ -1,6 +1,7 @@
 package expedition.ui
 
 import expedition.engine.ListenerConfig
+import expedition.engine.Socks5ListenerConfig
 import expedition.engine.TlsMode
 import expedition.registry.Protocol
 import expedition.tls.BurpCertificateProvider
@@ -11,7 +12,8 @@ import javax.swing.*
 class ListenersPanel(
     private val onStartListener: (ListenerConfig) -> Unit,
     private val onStopListener: (String) -> Unit,
-    private val onConfigureCertificateProvider: (BurpCertificateProvider) -> Unit
+    private val onConfigureCertificateProvider: (BurpCertificateProvider) -> Unit,
+    private val onStartSocks5Listener: (Socks5ListenerConfig) -> Unit = {}
 ) {
     private val tableModel = ListenerTableModel()
     private val table = JTable(tableModel)
@@ -57,29 +59,45 @@ class ListenersPanel(
     private fun showAddDialog() {
         val nameField = JTextField()
         val protocolBox = JComboBox(Protocol.values())
+        val socksBox = JCheckBox("SOCKS5 dynamic (relays to the client-negotiated destination; ignores upstream)")
         val bindHostField = JTextField("127.0.0.1")
         val bindPortField = JTextField()
         val upstreamHostField = JTextField()
         val upstreamPortField = JTextField()
         val tlsBox = JComboBox(TlsMode.values())
+        val upstreamProxyField = JTextField()
+        val clientCertField = JTextField()
+        val clientCertPwd = JPasswordField()
 
         val form = JPanel(GridLayout(0, 2)).apply {
             add(JLabel("Name")); add(nameField)
+            add(JLabel("SOCKS5")); add(socksBox)
             add(JLabel("Protocol")); add(protocolBox)
             add(JLabel("Bind host")); add(bindHostField)
             add(JLabel("Bind port")); add(bindPortField)
             add(JLabel("Upstream host")); add(upstreamHostField)
             add(JLabel("Upstream port")); add(upstreamPortField)
             add(JLabel("TLS mode")); add(tlsBox)
+            add(JLabel("Upstream proxy (host:port)")); add(upstreamProxyField)
+            add(JLabel("Upstream client cert (.p12)")); add(clientCertField)
+            add(JLabel("Client cert password")); add(clientCertPwd)
         }
 
         val result = JOptionPane.showConfirmDialog(component, form, "Add Listener", JOptionPane.OK_CANCEL_OPTION)
         if (result != JOptionPane.OK_OPTION) return
 
+        if (socksBox.isSelected) {
+            addSocks5(nameField.text.trim(), bindHostField.text.trim(), bindPortField.text.trim())
+            return
+        }
+
         val validated = ListenerFormValidation.validate(
             nameField.text, protocolBox.selectedItem as Protocol, bindHostField.text, bindPortField.text,
             upstreamHostField.text, upstreamPortField.text, tlsBox.selectedItem as TlsMode, tableModel.names(),
-            certificateProviderConfigured
+            certificateProviderConfigured,
+            upstreamProxy = upstreamProxyField.text.trim(),
+            clientCertPath = clientCertField.text.trim(),
+            clientCertPassword = clientCertPwd.password
         )
         validated.onSuccess { config ->
             tableModel.add(config)
@@ -87,6 +105,21 @@ class ListenersPanel(
         }.onFailure { error ->
             JOptionPane.showMessageDialog(component, error.message, "Invalid listener", JOptionPane.ERROR_MESSAGE)
         }
+    }
+
+    private fun addSocks5(name: String, bindHost: String, bindPort: String) {
+        if (name.isBlank() || name in tableModel.names()) {
+            JOptionPane.showMessageDialog(component, "SOCKS5 listener needs a unique name", "Invalid listener", JOptionPane.ERROR_MESSAGE)
+            return
+        }
+        val port = bindPort.toIntOrNull()?.takeIf { it in 1..65535 } ?: run {
+            JOptionPane.showMessageDialog(component, "Bind port must be 1-65535", "Invalid listener", JOptionPane.ERROR_MESSAGE)
+            return
+        }
+        val host = bindHost.ifBlank { "127.0.0.1" }
+        // Cosmetic row: SOCKS5 has no fixed upstream (destinations are negotiated per-connection).
+        tableModel.add(ListenerConfig(name, Protocol.TCP, host, port, "(socks5 dynamic)", port))
+        onStartSocks5Listener(Socks5ListenerConfig(name, host, port))
     }
 
     private fun stopSelected() {
