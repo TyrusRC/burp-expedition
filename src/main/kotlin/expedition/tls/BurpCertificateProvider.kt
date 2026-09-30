@@ -65,6 +65,12 @@ class BurpCertificateProvider(
         // SNI-based host selection is a v-next upgrade.
         val sanType = if (isIpLiteral(host)) GeneralName.iPAddress else GeneralName.dNSName
         builder.addExtension(Extension.subjectAlternativeName, false, GeneralNames(GeneralName(sanType, host)))
+        // Subject/Authority Key Identifiers + BasicConstraints: OpenSSL 3.x clients (curl,
+        // browsers, modern TLS libs) reject a leaf that lacks an Authority Key Identifier.
+        val extUtils = org.bouncycastle.cert.jcajce.JcaX509ExtensionUtils()
+        builder.addExtension(Extension.subjectKeyIdentifier, false, extUtils.createSubjectKeyIdentifier(keyPair.public))
+        builder.addExtension(Extension.authorityKeyIdentifier, false, extUtils.createAuthorityKeyIdentifier(caCertificate.publicKey))
+        builder.addExtension(Extension.basicConstraints, false, org.bouncycastle.asn1.x509.BasicConstraints(false))
         val signer = JcaContentSignerBuilder("SHA256withRSA").build(caKey)
         val cert = JcaX509CertificateConverter().getCertificate(builder.build(signer))
         return cert to keyPair.private

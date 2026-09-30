@@ -48,6 +48,11 @@ object DefaultCa {
         )
         builder.addExtension(Extension.basicConstraints, true, BasicConstraints(true))
         builder.addExtension(Extension.keyUsage, true, KeyUsage(KeyUsage.keyCertSign or KeyUsage.cRLSign))
+        // Subject Key Identifier so issued leaves' Authority Key Identifier matches (OpenSSL 3.x).
+        builder.addExtension(
+            Extension.subjectKeyIdentifier, false,
+            org.bouncycastle.cert.jcajce.JcaX509ExtensionUtils().createSubjectKeyIdentifier(keyPair.public)
+        )
         val cert = JcaX509CertificateConverter().getCertificate(
             builder.build(JcaContentSignerBuilder("SHA256withRSA").build(keyPair.private))
         )

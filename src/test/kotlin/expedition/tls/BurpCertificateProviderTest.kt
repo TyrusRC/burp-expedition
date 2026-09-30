@@ -44,6 +44,15 @@ class BurpCertificateProviderTest {
     }
 
     @Test
+    fun `minted leaf carries subject and authority key identifiers`() {
+        val provider = BurpCertificateProvider(keystoreFile, password)
+        val (leaf, _) = provider.leafCertificateFor("example.test")
+        // OpenSSL 3.x clients reject a leaf without an Authority Key Identifier.
+        assertNotNull(leaf.getExtensionValue("2.5.29.14"), "missing Subject Key Identifier")
+        assertNotNull(leaf.getExtensionValue("2.5.29.35"), "missing Authority Key Identifier")
+    }
+
+    @Test
     fun `caches the leaf certificate for repeated lookups of the same host`() {
         val provider = BurpCertificateProvider(keystoreFile, password)
 
