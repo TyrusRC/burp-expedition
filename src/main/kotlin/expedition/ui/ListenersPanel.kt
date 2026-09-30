@@ -69,6 +69,16 @@ class ListenersPanel(
         val clientCertField = JTextField()
         val clientCertPwd = JPasswordField()
 
+        // Placeholder hints (FlatLaf, which Burp uses, renders these as grey text when empty).
+        nameField.putClientProperty("JTextField.placeholderText", "e.g. redis-proxy")
+        bindHostField.putClientProperty("JTextField.placeholderText", "127.0.0.1")
+        bindPortField.putClientProperty("JTextField.placeholderText", "e.g. 8080")
+        upstreamHostField.putClientProperty("JTextField.placeholderText", "e.g. 10.0.0.5 or example.test")
+        upstreamPortField.putClientProperty("JTextField.placeholderText", "e.g. 6379")
+        upstreamProxyField.putClientProperty("JTextField.placeholderText", "host:port (optional)")
+        clientCertField.putClientProperty("JTextField.placeholderText", "/path/to/client.p12 (optional)")
+        clientCertPwd.putClientProperty("JTextField.placeholderText", "(optional)")
+
         val form = JPanel(GridLayout(0, 2)).apply {
             add(JLabel("Name")); add(nameField)
             add(JLabel("SOCKS5")); add(socksBox)
