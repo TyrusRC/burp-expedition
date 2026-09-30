@@ -19,13 +19,15 @@ class ExpeditionTab(
     private val interceptController: InterceptController,
     private val onStartListener: (ListenerConfig) -> Unit,
     private val onStopListener: (String) -> Unit,
-    private val onStartSocks5Listener: (Socks5ListenerConfig) -> Unit = {}
+    private val onStartSocks5Listener: (Socks5ListenerConfig) -> Unit = {},
+    initialCertificateProvider: BurpCertificateProvider? = null
 ) {
     private val tabbedPane = JTabbedPane()
     val component: JComponent = tabbedPane
 
+    // Defaults to the auto-generated CA (if any); "Configure CA Keystore" replaces it with Burp's.
     @Volatile
-    private var certificateProvider: BurpCertificateProvider? = null
+    private var certificateProvider: BurpCertificateProvider? = initialCertificateProvider
 
     private val interceptPanel = InterceptPanel(interceptController, dissectorRegistry)
     private val historyPanel = HistoryPanel(registry, dissectorRegistry)
@@ -35,7 +37,8 @@ class ExpeditionTab(
         val listenersPanel = ListenersPanel(
             onStartListener, onStopListener,
             onConfigureCertificateProvider = { provider -> certificateProvider = provider },
-            onStartSocks5Listener = onStartSocks5Listener
+            onStartSocks5Listener = onStartSocks5Listener,
+            certificateProviderPreconfigured = certificateProvider != null
         )
         tabbedPane.addTab("Listeners", listenersPanel.component)
         tabbedPane.addTab("Intercept", interceptPanel.component)

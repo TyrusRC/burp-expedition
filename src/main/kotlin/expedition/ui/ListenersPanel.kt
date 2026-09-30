@@ -13,11 +13,13 @@ class ListenersPanel(
     private val onStartListener: (ListenerConfig) -> Unit,
     private val onStopListener: (String) -> Unit,
     private val onConfigureCertificateProvider: (BurpCertificateProvider) -> Unit,
-    private val onStartSocks5Listener: (Socks5ListenerConfig) -> Unit = {}
+    private val onStartSocks5Listener: (Socks5ListenerConfig) -> Unit = {},
+    certificateProviderPreconfigured: Boolean = false
 ) {
     private val tableModel = ListenerTableModel()
     private val table = JTable(tableModel)
-    @Volatile private var certificateProviderConfigured = false
+    // True once a CA is available — either the auto-generated default or one loaded via the UI.
+    @Volatile private var certificateProviderConfigured = certificateProviderPreconfigured
     val component: JComponent
 
     init {

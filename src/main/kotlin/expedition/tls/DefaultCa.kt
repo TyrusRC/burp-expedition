@@ -1,0 +1,67 @@
+package expedition.tls
+
+import org.bouncycastle.asn1.x500.X500Name
+import org.bouncycastle.asn1.x509.BasicConstraints
+import org.bouncycastle.asn1.x509.Extension
+import org.bouncycastle.asn1.x509.KeyUsage
+import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter
+import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder
+import org.bouncycastle.jce.provider.BouncyCastleProvider
+import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder
+import java.io.File
+import java.math.BigInteger
+import java.security.KeyPairGenerator
+import java.security.KeyStore
+import java.security.Security
+import java.time.Duration
+import java.time.Instant
+import java.util.Base64
+import java.util.Date
+
+/**
+ * A locally-generated default CA, so TLS MITM / STARTTLS work out of the box without the
+ * user first exporting Burp's CA. A UNIQUE CA is minted per machine and persisted under
+ * [dir] — never bundled in the repo (a shared/committed CA private key would let anyone
+ * trusting it be MITM'd). The matching PEM cert is written alongside so it can be installed
+ * into clients that don't already trust Burp's CA.
+ */
+object DefaultCa {
+
+    private const val CA_FILE = "expedition-ca.p12"
+    private const val CRT_FILE = "expedition-ca.crt"
+    private const val ALIAS = "expedition-ca"
+
+    /** Returns the CA keystore under [dir], generating (and persisting) it once if absent. */
+    fun ensureDefaultCa(dir: File, password: CharArray): File {
+        dir.mkdirs()
+        val p12 = File(dir, CA_FILE)
+        if (p12.exists()) return p12
+
+        Security.addProvider(BouncyCastleProvider())
+        val keyPair = KeyPairGenerator.getInstance("RSA").apply { initialize(2048) }.generateKeyPair()
+        val now = Instant.now()
+        val subject = X500Name("CN=Expedition Auto CA")
+        val builder = JcaX509v3CertificateBuilder(
+            subject, BigInteger.valueOf(now.toEpochMilli()),
+            Date.from(now.minus(Duration.ofDays(1))), Date.from(now.plus(Duration.ofDays(3650))),
+            subject, keyPair.public
+        )
+        builder.addExtension(Extension.basicConstraints, true, BasicConstraints(true))
+        builder.addExtension(Extension.keyUsage, true, KeyUsage(KeyUsage.keyCertSign or KeyUsage.cRLSign))
+        val cert = JcaX509CertificateConverter().getCertificate(
+            builder.build(JcaContentSignerBuilder("SHA256withRSA").build(keyPair.private))
+        )
+
+        val ks = KeyStore.getInstance("PKCS12")
+        ks.load(null, password)
+        ks.setKeyEntry(ALIAS, keyPair.private, password, arrayOf(cert))
+        p12.outputStream().use { ks.store(it, password) }
+
+        // Export the cert (PEM) for installing into clients that don't trust Burp's CA.
+        val pem = "-----BEGIN CERTIFICATE-----\n" +
+            Base64.getMimeEncoder(64, "\n".toByteArray()).encodeToString(cert.encoded) +
+            "\n-----END CERTIFICATE-----\n"
+        File(dir, CRT_FILE).writeText(pem)
+        return p12
+    }
+}

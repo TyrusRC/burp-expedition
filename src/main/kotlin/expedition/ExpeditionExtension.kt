@@ -33,6 +33,22 @@ class ExpeditionExtension : BurpExtension {
         val matchReplaceEngine = MatchReplaceEngine(dissectorRegistry)
         val interceptController = InterceptController()
 
+        // Auto-generate a per-machine default CA so TLS MITM / STARTTLS work out of the box.
+        // Disable with EXPEDITION_AUTOCA_DISABLE=1; relocate with EXPEDITION_CA_DIR.
+        val defaultCaProvider = if (System.getenv("EXPEDITION_AUTOCA_DISABLE") == "1") null else runCatching {
+            val caDir = java.io.File(
+                System.getenv("EXPEDITION_CA_DIR")?.takeIf { it.isNotBlank() }
+                    ?: (System.getProperty("user.home") + java.io.File.separator + ".expedition")
+            )
+            val p12 = expedition.tls.DefaultCa.ensureDefaultCa(caDir, "expedition".toCharArray())
+            expedition.tls.BurpCertificateProvider(p12, "expedition".toCharArray()).also {
+                api.logging().logToOutput(
+                    "Expedition: using auto-generated CA at ${p12.path} — install " +
+                    "${java.io.File(caDir, "expedition-ca.crt").path} in clients, or load Burp's own CA " +
+                    "via the Listeners tab to reuse Burp's trust.")
+            }
+        }.onFailure { api.logging().logToError("Expedition auto-CA failed: ${it.message}") }.getOrNull()
+
         lateinit var tab: ExpeditionTab
         val engine = ProxyEngine(
             registry, interceptController, matchReplaceEngine,
@@ -44,7 +60,8 @@ class ExpeditionExtension : BurpExtension {
             registry, dissectorRegistry, matchReplaceEngine, interceptController,
             onStartListener = { config -> engine.startListener(config) },
             onStopListener = { name -> engine.stopListener(name) },
-            onStartSocks5Listener = { config -> engine.startSocks5Listener(config) }
+            onStartSocks5Listener = { config -> engine.startSocks5Listener(config) },
+            initialCertificateProvider = defaultCaProvider
         )
 
         api.userInterface().registerSuiteTab("Expedition", tab.component)

@@ -42,13 +42,19 @@ Match & Replace.
 
 ## TLS MITM setup
 
-The Montoya API exposes no way to read Burp's CA key, so TLS termination uses a
-CA keystore you export once:
+**By default it just works:** on first load the extension generates a unique CA under
+`~/.expedition/` (`EXPEDITION_CA_DIR` to relocate, `EXPEDITION_AUTOCA_DISABLE=1` to turn
+off) and uses it for TLS MITM / STARTTLS. Install `~/.expedition/expedition-ca.crt` in
+whatever client you're testing so it trusts the minted leaf certs. The CA private key
+never leaves that folder and is never committed.
+
+**To reuse Burp's own CA instead** (so devices already trusting Burp need no new cert) —
+the Montoya API can't read Burp's CA key, so export it once:
 
 1. Burp → **Proxy** → **Proxy settings** → **Import / export CA certificate** →
    export as **PKCS#12** (certificate **and** private key).
 2. In the **Listeners** tab, **Configure CA Keystore…**, select that `.p12` and
-   enter its password.
+   enter its password (this replaces the auto-generated CA).
 3. Add a listener with TLS mode **MITM**. Clients that already trust Burp's CA
    need no new certificate.
 
