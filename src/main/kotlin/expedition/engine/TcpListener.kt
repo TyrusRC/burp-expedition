@@ -1,5 +1,6 @@
 package expedition.engine
 
+import expedition.engine.tls.StartTlsCoordinator
 import expedition.engine.tls.TcpTlsSupport
 import expedition.intercept.InterceptController
 import expedition.matchreplace.MatchReplaceEngine
@@ -36,12 +37,21 @@ class TcpListener(
                         val serverSslContext = TcpTlsSupport.serverContext(provider, config.upstreamHost)
                         clientChannel.pipeline().addLast(serverSslContext.newHandler(clientChannel.alloc()))
                     }
+                    // STARTTLS: start plaintext, upgrade both legs when the negotiation completes.
+                    val startTls = if (config.tlsMode == TlsMode.STARTTLS) {
+                        val provider = certificateProvider
+                            ?: throw IllegalStateException("Listener '${config.name}' requires STARTTLS but no BurpCertificateProvider was configured")
+                        val coordinator = StartTlsCoordinator(StartTlsDetector(), clientChannel, provider, config)
+                        clientChannel.pipeline().addLast(coordinator.clientObserver())
+                        coordinator
+                    } else null
                     clientChannel.pipeline().addLast(
                         TcpClientHandler(config, registry, workerGroup, messageGate) { upstream, connection ->
                             if (config.tlsMode == TlsMode.MITM) {
                                 val clientSslContext = TcpTlsSupport.clientContext(config.upstreamClientAuth)
                                 upstream.pipeline().addLast(clientSslContext.newHandler(upstream.alloc(), config.upstreamHost, config.upstreamPort))
                             }
+                            if (startTls != null) upstream.pipeline().addLast(startTls.upstreamObserver())
                             upstream.pipeline().addLast(TcpUpstreamHandler(registry, connection.connectionId, connection))
                         }
                     )
