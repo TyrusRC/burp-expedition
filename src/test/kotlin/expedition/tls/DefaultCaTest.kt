@@ -34,4 +34,16 @@ class DefaultCaTest {
         assertTrue(crt.exists())
         assertTrue(crt.readText().contains("BEGIN CERTIFICATE"))
     }
+
+    @Test
+    fun `the CA key file is not world-readable on POSIX`() {
+        val p12 = DefaultCa.ensureDefaultCa(dir, pw)
+        val perms = try {
+            java.nio.file.Files.getPosixFilePermissions(p12.toPath())
+        } catch (e: UnsupportedOperationException) {
+            org.junit.jupiter.api.Assumptions.assumeTrue(false, "non-POSIX filesystem"); return
+        }
+        assertFalse(perms.contains(java.nio.file.attribute.PosixFilePermission.GROUP_READ), perms.toString())
+        assertFalse(perms.contains(java.nio.file.attribute.PosixFilePermission.OTHERS_READ), perms.toString())
+    }
 }

@@ -56,6 +56,7 @@ object DefaultCa {
         ks.load(null, password)
         ks.setKeyEntry(ALIAS, keyPair.private, password, arrayOf(cert))
         p12.outputStream().use { ks.store(it, password) }
+        restrictToOwner(p12)   // the keystore holds a CA private key — not world-readable
 
         // Export the cert (PEM) for installing into clients that don't trust Burp's CA.
         val pem = "-----BEGIN CERTIFICATE-----\n" +
@@ -63,5 +64,12 @@ object DefaultCa {
             "\n-----END CERTIFICATE-----\n"
         File(dir, CRT_FILE).writeText(pem)
         return p12
+    }
+
+    /** Restrict a private-key file to the owner. POSIX (Linux/macOS) → 0600; no-op-safe on Windows. */
+    private fun restrictToOwner(f: File) {
+        f.setReadable(false, false); f.setReadable(true, true)
+        f.setWritable(false, false); f.setWritable(true, true)
+        f.setExecutable(false, false)
     }
 }
