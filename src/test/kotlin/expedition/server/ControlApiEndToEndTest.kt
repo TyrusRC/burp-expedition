@@ -45,10 +45,10 @@ class ControlApiEndToEndTest {
         server = ControlApiServer(
             host = "127.0.0.1", port = apiPort,
             registry = registry, matchReplace = MatchReplaceEngine(), intercept = InterceptController(),
-            startListener = { engine.startListener(it) },
+            startListener = { engine.startListenerChecked(it) },
             stopListener = { engine.stopListener(it) },
             runningListeners = { engine.runningListenerNames() },
-            startSocks5Listener = { engine.startSocks5Listener(it) },
+            startSocks5Listener = { engine.startSocks5ListenerChecked(it) },
         )
         server.start()
     }
@@ -115,6 +115,16 @@ class ControlApiEndToEndTest {
                 """{"name":"chain","protocol":"tcp","bind_port":$port,"upstream_host":"127.0.0.1","upstream_port":${echo.port},"upstream_proxy":"127.0.0.1:$socksPort"}""")
             assertEquals(200, r.statusCode(), r.body())
             Socket("127.0.0.1", port).use { assertEquals("ping", relay(it, "ping", 4)) }
+        }
+    }
+
+    @Test
+    fun `a bind failure returns an error, not a false 200`() {
+        ServerSocket(0).use { reserved ->
+            val r = post("/listeners",
+                """{"name":"badbind","protocol":"tcp","bind_port":${reserved.localPort},"upstream_host":"127.0.0.1","upstream_port":9}""")
+            assertNotEquals(200, r.statusCode(), r.body())
+            assertTrue(r.body().contains("error"), r.body())
         }
     }
 

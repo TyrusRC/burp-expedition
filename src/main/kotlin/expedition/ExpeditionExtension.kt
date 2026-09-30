@@ -61,10 +61,12 @@ class ExpeditionExtension : BurpExtension {
                 host = bindHost, port = port,
                 registry = registry, matchReplace = matchReplaceEngine,
                 intercept = interceptController,
-                startListener = { engine.startListener(it) },
+                // API path uses the *Checked variants so a bind failure returns an HTTP
+                // error to the caller (curl/Praetor) instead of silently succeeding.
+                startListener = { engine.startListenerChecked(it) },
                 stopListener = { engine.stopListener(it) },
                 runningListeners = { engine.runningListenerNames() },
-                startSocks5Listener = { engine.startSocks5Listener(it) },
+                startSocks5Listener = { engine.startSocks5ListenerChecked(it) },
             ).also {
                 it.start()
                 api.logging().logToOutput("Expedition control API on $bindHost:$port")

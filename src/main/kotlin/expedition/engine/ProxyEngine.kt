@@ -25,23 +25,10 @@ class ProxyEngine(
     private val udpListeners = ConcurrentHashMap<String, UdpListener>()
     private val socksListeners = ConcurrentHashMap<String, Socks5Listener>()
 
+    /** UI entry point: binds the listener, routing any failure to [onError] (never throws for bind errors). */
     fun startListener(config: ListenerConfig) {
-        require(!tcpListeners.containsKey(config.name) && !udpListeners.containsKey(config.name)) {
-            "A listener named '${config.name}' is already running"
-        }
         try {
-            when (config.protocol) {
-                Protocol.TCP -> {
-                    val listener = TcpListener(config, registry, bossGroup, workerGroup, messageGate, certificateProviderSupplier())
-                    listener.start().sync()
-                    tcpListeners[config.name] = listener
-                }
-                Protocol.UDP -> {
-                    val listener = UdpListener(config, registry, workerGroup, messageGate)
-                    listener.start().sync()
-                    udpListeners[config.name] = listener
-                }
-            }
+            startListenerChecked(config)
         } catch (e: IllegalArgumentException) {
             throw e
         } catch (e: Exception) {
@@ -49,20 +36,44 @@ class ProxyEngine(
         }
     }
 
-    fun startSocks5Listener(config: Socks5ListenerConfig) {
+    /** API entry point: binds the listener and THROWS on failure so the caller can report it. */
+    fun startListenerChecked(config: ListenerConfig) {
         require(!tcpListeners.containsKey(config.name) && !udpListeners.containsKey(config.name) &&
             !socksListeners.containsKey(config.name)) {
             "A listener named '${config.name}' is already running"
         }
+        when (config.protocol) {
+            Protocol.TCP -> {
+                val listener = TcpListener(config, registry, bossGroup, workerGroup, messageGate, certificateProviderSupplier())
+                listener.start().sync()
+                tcpListeners[config.name] = listener
+            }
+            Protocol.UDP -> {
+                val listener = UdpListener(config, registry, workerGroup, messageGate)
+                listener.start().sync()
+                udpListeners[config.name] = listener
+            }
+        }
+    }
+
+    fun startSocks5Listener(config: Socks5ListenerConfig) {
         try {
-            val listener = Socks5Listener(config, registry, bossGroup, workerGroup, messageGate)
-            listener.start().sync()
-            socksListeners[config.name] = listener
+            startSocks5ListenerChecked(config)
         } catch (e: IllegalArgumentException) {
             throw e
         } catch (e: Exception) {
             onError(config.name, e.message ?: "Failed to bind SOCKS5 listener")
         }
+    }
+
+    fun startSocks5ListenerChecked(config: Socks5ListenerConfig) {
+        require(!tcpListeners.containsKey(config.name) && !udpListeners.containsKey(config.name) &&
+            !socksListeners.containsKey(config.name)) {
+            "A listener named '${config.name}' is already running"
+        }
+        val listener = Socks5Listener(config, registry, bossGroup, workerGroup, messageGate)
+        listener.start().sync()
+        socksListeners[config.name] = listener
     }
 
     fun stopListener(name: String) {

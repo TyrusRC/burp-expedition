@@ -50,6 +50,10 @@ class ExpeditionTab(
     }
 
     fun onListenerError(listenerName: String, message: String) {
-        JOptionPane.showMessageDialog(component, "Listener '$listenerName' failed: $message", "Expedition", JOptionPane.ERROR_MESSAGE)
+        // invokeLater: onError may be called from a Netty/HTTP thread (e.g. the control API).
+        // A modal dialog shown off the EDT would block that thread — freezing the API/engine.
+        javax.swing.SwingUtilities.invokeLater {
+            JOptionPane.showMessageDialog(component, "Listener '$listenerName' failed: $message", "Expedition", JOptionPane.ERROR_MESSAGE)
+        }
     }
 }
