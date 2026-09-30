@@ -30,7 +30,17 @@ class TcpConnection(
             .group(workerGroup)
             .channel(NioSocketChannel::class.java)
             .handler(object : ChannelInitializer<SocketChannel>() {
-                override fun initChannel(upstream: SocketChannel) = pipelineBuilder(upstream)
+                override fun initChannel(upstream: SocketChannel) {
+                    // Chain the upstream leg through an outbound SOCKS5 proxy if configured.
+                    // The ProxyHandler negotiates to the real destination (the bootstrap's
+                    // connect target) and buffers writes until the tunnel is established.
+                    config.upstreamProxy?.let { p ->
+                        upstream.pipeline().addLast(
+                            io.netty.handler.proxy.Socks5ProxyHandler(java.net.InetSocketAddress(p.host, p.port))
+                        )
+                    }
+                    pipelineBuilder(upstream)
+                }
             })
         bootstrap.connect(config.upstreamHost, config.upstreamPort).addListener(ChannelFutureListener { f ->
             if (f.isSuccess) {
