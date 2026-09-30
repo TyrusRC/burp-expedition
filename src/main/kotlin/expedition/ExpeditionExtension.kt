@@ -50,13 +50,13 @@ class ExpeditionExtension : BurpExtension {
         api.userInterface().registerSuiteTab("Expedition", tab.component)
 
         // Loopback control API (Praetor MCP). Disable with EXPEDITION_API_DISABLE=1;
-        // override the port with EXPEDITION_API_PORT (default 8112).
+        // override the port with EXPEDITION_API_PORT (default 18112).
         val apiServer = if (System.getenv("EXPEDITION_API_DISABLE") == "1") null else runCatching {
             // Loopback default (secure). Override with EXPEDITION_API_HOST only
             // when the MCP client is off-host (NAT-mode WSL reaches Burp on the
             // Windows IP) — set it to the reachable bind IP, not 0.0.0.0.
             val bindHost = System.getenv("EXPEDITION_API_HOST")?.takeIf { it.isNotBlank() } ?: "127.0.0.1"
-            val port = System.getenv("EXPEDITION_API_PORT")?.toIntOrNull() ?: 8112
+            val port = System.getenv("EXPEDITION_API_PORT")?.toIntOrNull() ?: 18112
             ControlApiServer(
                 host = bindHost, port = port,
                 registry = registry, matchReplace = matchReplaceEngine,
