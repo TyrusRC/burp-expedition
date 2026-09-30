@@ -2,13 +2,18 @@ package expedition.ui
 
 import expedition.dissector.DissectorRegistry
 import expedition.registry.ConnectionRegistry
+import expedition.session.FlowTagStore
+import expedition.session.SessionSnapshot
+import expedition.session.SessionStore
 import java.awt.BorderLayout
+import java.io.File
 import javax.swing.*
 import javax.swing.table.AbstractTableModel
 
 class HistoryPanel(
     private val registry: ConnectionRegistry,
-    private val dissectorRegistry: DissectorRegistry
+    private val dissectorRegistry: DissectorRegistry,
+    private val flowTagStore: FlowTagStore = FlowTagStore()
 ) {
     private val connectionModel = ConnectionTableModel()
     private val connectionTable = JTable(connectionModel)
@@ -24,7 +29,10 @@ class HistoryPanel(
         }
         val refreshButton = JButton("Refresh").apply { addActionListener { refresh() } }
         val replayButton = JButton("Replay Selected Connection").apply { addActionListener { replaySelected() } }
-        val buttonPanel = JPanel().apply { add(refreshButton); add(replayButton) }
+        val tagButton = JButton("Tag Selected...").apply { addActionListener { tagSelected() } }
+        val exportButton = JButton("Export Session...").apply { addActionListener { exportSession() } }
+        val importButton = JButton("Import Session...").apply { addActionListener { importSession() } }
+        val buttonPanel = JPanel().apply { add(refreshButton); add(replayButton); add(tagButton); add(exportButton); add(importButton) }
 
         val split = JSplitPane(JSplitPane.HORIZONTAL_SPLIT, JScrollPane(connectionTable), JScrollPane(messagesArea))
         component = JPanel(BorderLayout()).apply {
@@ -36,6 +44,44 @@ class HistoryPanel(
 
     fun refresh() {
         connectionModel.setAll(registry.allConnections())
+    }
+
+    private fun tagSelected() {
+        val row = connectionTable.selectedRow
+        if (row < 0) return
+        val id = connectionModel.at(row).connectionId
+        val tag = JOptionPane.showInputDialog(component, "Tag for connection #$id (current: ${flowTagStore.tags(id)})")
+            ?.trim().orEmpty()
+        if (tag.isNotEmpty()) flowTagStore.tag(id, tag)
+    }
+
+    private fun exportSession() {
+        val chooser = JFileChooser().apply { dialogTitle = "Export session to JSON" }
+        if (chooser.showSaveDialog(component) != JFileChooser.APPROVE_OPTION) return
+        val snapshot = SessionSnapshot(registry.allConnections(), registry.allMessages(), flowTagStore.all())
+        try {
+            chooser.selectedFile.writeText(SessionStore.export(snapshot))
+            JOptionPane.showMessageDialog(component, "Exported ${snapshot.connections.size} connections.")
+        } catch (e: Exception) {
+            JOptionPane.showMessageDialog(component, "Export failed: ${e.message}", "Error", JOptionPane.ERROR_MESSAGE)
+        }
+    }
+
+    private fun importSession() {
+        val chooser = JFileChooser().apply { dialogTitle = "Import session JSON" }
+        if (chooser.showOpenDialog(component) != JFileChooser.APPROVE_OPTION) return
+        try {
+            val snapshot = SessionStore.import(File(chooser.selectedFile.path).readText())
+            flowTagStore.load(snapshot.tags)
+            // NOTE: tags are merged into the live store and the snapshot is shown read-only;
+            // re-populating the live History table from an imported session is a follow-up.
+            messagesArea.text = snapshot.connections.joinToString("\n") { c ->
+                "#${c.connectionId} ${c.protocol} ${c.clientAddress} -> ${c.upstreamAddress}  tags=${snapshot.tags[c.connectionId] ?: emptySet<String>()}"
+            }
+            JOptionPane.showMessageDialog(component, "Imported ${snapshot.connections.size} connections, ${snapshot.messages.size} messages.")
+        } catch (e: Exception) {
+            JOptionPane.showMessageDialog(component, "Import failed: ${e.message}", "Error", JOptionPane.ERROR_MESSAGE)
+        }
     }
 
     private fun renderMessagesFor(connectionId: Long) {
