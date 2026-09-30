@@ -5,7 +5,7 @@ import expedition.matchreplace.MatchReplaceRule
 import javax.swing.table.AbstractTableModel
 
 class MatchReplaceTableModel(private val engine: MatchReplaceEngine) : AbstractTableModel() {
-    private val columns = listOf("Type", "Match", "Replace", "Enabled")
+    private val columns = listOf("Type", "Match", "Replace", "Enabled", "Decoded")
     private var rows: List<MatchReplaceRule> = engine.rules()
 
     override fun getRowCount() = rows.size
@@ -18,6 +18,7 @@ class MatchReplaceTableModel(private val engine: MatchReplaceEngine) : AbstractT
             1 -> matchValue
             2 -> replaceValue
             3 -> enabled.toString()
+            4 -> decoded.toString()
             else -> ""
         }
     }

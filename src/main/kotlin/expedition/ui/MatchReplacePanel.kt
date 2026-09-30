@@ -27,16 +27,19 @@ class MatchReplacePanel(private val engine: MatchReplaceEngine) {
         val typeBox = JComboBox(MatchType.values())
         val matchField = JTextField()
         val replaceField = JTextField()
+        val decodedBox = JCheckBox("Match on decoded (dissected) view and re-encode")
         val form = JPanel(GridLayout(0, 2)).apply {
             add(JLabel("Type")); add(typeBox)
             add(JLabel("Match")); add(matchField)
             add(JLabel("Replace")); add(replaceField)
+            add(JLabel("Decoded")); add(decodedBox)
         }
         val result = JOptionPane.showConfirmDialog(component, form, "Add Rule", JOptionPane.OK_CANCEL_OPTION)
         if (result != JOptionPane.OK_OPTION) return
 
         val validated = MatchReplaceFormValidation.validate(
-            typeBox.selectedItem as MatchType, matchField.text, replaceField.text, nextId.getAndIncrement()
+            typeBox.selectedItem as MatchType, matchField.text, replaceField.text, nextId.getAndIncrement(),
+            decodedBox.isSelected
         )
         validated.onSuccess { rule ->
             engine.addRule(rule)

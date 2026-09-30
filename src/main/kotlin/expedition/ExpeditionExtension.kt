@@ -24,7 +24,7 @@ class ExpeditionExtension : BurpExtension {
         dissectorRegistry.register(expedition.dissector.DnsDissector())
         dissectorRegistry.register(expedition.dissector.LineProtocolDissector())
         dissectorRegistry.register(expedition.dissector.RedisDissector())
-        val matchReplaceEngine = MatchReplaceEngine()
+        val matchReplaceEngine = MatchReplaceEngine(dissectorRegistry)
         val interceptController = InterceptController()
 
         lateinit var tab: ExpeditionTab

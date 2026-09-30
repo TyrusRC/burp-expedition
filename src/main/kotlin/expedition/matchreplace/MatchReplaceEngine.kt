@@ -1,8 +1,12 @@
 package expedition.matchreplace
 
+import expedition.dissector.DissectorRegistry
+import expedition.registry.Direction
+import expedition.registry.ProxyMessage
+import java.time.Instant
 import java.util.concurrent.CopyOnWriteArrayList
 
-class MatchReplaceEngine {
+class MatchReplaceEngine(private val dissectorRegistry: DissectorRegistry? = null) {
     // CopyOnWriteArrayList: rules are mutated from the Swing EDT (Match & Replace panel)
     // while apply() iterates them from Netty worker threads. Copy-on-write gives each
     // apply() a stable snapshot without locking and never throws ConcurrentModificationException.
@@ -20,8 +24,24 @@ class MatchReplaceEngine {
 
     fun apply(input: ByteArray): ByteArray {
         var current = input
-        for (rule in rules.filter { it.enabled }) {
+        // Raw-byte rules first.
+        for (rule in rules.filter { it.enabled && !it.decoded }) {
             current = applyRule(rule, current)
+        }
+        // Decoded rules: rewrite the dissector's text view, then re-encode (fixes framing).
+        val decodedRules = rules.filter { it.enabled && it.decoded }
+        if (decodedRules.isNotEmpty() && dissectorRegistry != null) {
+            val message = ProxyMessage(0, 0, Direction.CLIENT_TO_UPSTREAM, Instant.now(), current)
+            val dissector = dissectorRegistry.dissectorFor(message)
+            var text = dissector.render(message)
+            for (rule in decodedRules) {
+                text = when (rule.matchType) {
+                    MatchType.LITERAL_STRING -> text.replace(rule.matchValue, rule.replaceValue)
+                    MatchType.REGEX -> text.replace(Regex(rule.matchValue), rule.replaceValue)
+                    MatchType.LITERAL_BYTES -> text // hex-byte matching is meaningless on decoded text
+                }
+            }
+            current = dissector.parseEdit(text, message)
         }
         return current
     }

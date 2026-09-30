@@ -41,4 +41,17 @@ class MatchReplaceFormValidationTest {
         val result = MatchReplaceFormValidation.validate(MatchType.LITERAL_STRING, "", "bar", 1)
         assertTrue(result.isFailure)
     }
+
+    @Test
+    fun `accepts a decoded string rule and marks it decoded`() {
+        val result = MatchReplaceFormValidation.validate(MatchType.LITERAL_STRING, "foo", "bar", 1, decoded = true)
+        assertTrue(result.isSuccess)
+        assertTrue(result.getOrThrow().decoded)
+    }
+
+    @Test
+    fun `rejects a decoded rule that matches raw bytes`() {
+        val result = MatchReplaceFormValidation.validate(MatchType.LITERAL_BYTES, "4865", "00", 1, decoded = true)
+        assertTrue(result.isFailure)
+    }
 }
