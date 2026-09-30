@@ -23,6 +23,7 @@ class ProxyEngine(
     private val workerGroup = NioEventLoopGroup()
     private val tcpListeners = ConcurrentHashMap<String, TcpListener>()
     private val udpListeners = ConcurrentHashMap<String, UdpListener>()
+    private val socksListeners = ConcurrentHashMap<String, Socks5Listener>()
 
     fun startListener(config: ListenerConfig) {
         require(!tcpListeners.containsKey(config.name) && !udpListeners.containsKey(config.name)) {
@@ -48,18 +49,37 @@ class ProxyEngine(
         }
     }
 
+    fun startSocks5Listener(config: Socks5ListenerConfig) {
+        require(!tcpListeners.containsKey(config.name) && !udpListeners.containsKey(config.name) &&
+            !socksListeners.containsKey(config.name)) {
+            "A listener named '${config.name}' is already running"
+        }
+        try {
+            val listener = Socks5Listener(config, registry, bossGroup, workerGroup, messageGate)
+            listener.start().sync()
+            socksListeners[config.name] = listener
+        } catch (e: IllegalArgumentException) {
+            throw e
+        } catch (e: Exception) {
+            onError(config.name, e.message ?: "Failed to bind SOCKS5 listener")
+        }
+    }
+
     fun stopListener(name: String) {
         tcpListeners.remove(name)?.stop()
         udpListeners.remove(name)?.stop()
+        socksListeners.remove(name)?.stop()
     }
 
-    fun runningListenerNames(): Set<String> = tcpListeners.keys + udpListeners.keys
+    fun runningListenerNames(): Set<String> = tcpListeners.keys + udpListeners.keys + socksListeners.keys
 
     fun shutdown() {
         tcpListeners.values.forEach { it.stop() }
         udpListeners.values.forEach { it.stop() }
+        socksListeners.values.forEach { it.stop() }
         tcpListeners.clear()
         udpListeners.clear()
+        socksListeners.clear()
         workerGroup.shutdownGracefully().sync()
         bossGroup.shutdownGracefully().sync()
     }

@@ -34,6 +34,16 @@ class ProxyEngineTest {
     }
 
     @Test
+    fun `starts a SOCKS5 listener and reports it as running`() {
+        val engine = newEngine()
+        engine.startSocks5Listener(Socks5ListenerConfig("socks", "127.0.0.1", 0))
+        assertTrue(engine.runningListenerNames().contains("socks"))
+        engine.stopListener("socks")
+        assertFalse(engine.runningListenerNames().contains("socks"))
+        engine.shutdown()
+    }
+
+    @Test
     fun `rejects a duplicate listener name`() {
         val engine = newEngine()
         TcpEchoServer().use { echo ->

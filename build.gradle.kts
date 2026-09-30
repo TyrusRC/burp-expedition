@@ -13,6 +13,8 @@ repositories {
 dependencies {
     compileOnly("net.portswigger.burp.extensions:montoya-api:2026.7")
     implementation("io.netty:netty-all:4.1.138.Final")
+    // netty-all does not bundle the SOCKS codec; same Netty version, relocated by shadow.
+    implementation("io.netty:netty-codec-socks:4.1.138.Final")
     implementation("org.bouncycastle:bcprov-jdk18on:1.85")
     implementation("org.bouncycastle:bcpkix-jdk18on:1.85")
 
