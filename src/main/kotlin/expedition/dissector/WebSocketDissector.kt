@@ -93,8 +93,9 @@ class WebSocketDissector : Dissector {
             if (pos + 4 > bytes.size) return null
             key = bytes.copyOfRange(pos, pos + 4); pos += 4
         }
+        // Long guard: pos + len can overflow Int for a length near Int.MAX.
+        if (len < 0 || pos.toLong() + len > bytes.size) return null
         val end = pos + len
-        if (end > bytes.size) return null
         val raw = bytes.copyOfRange(pos, end)
         val payload = if (masked && key != null) ByteArray(raw.size) { (raw[it].toInt() xor key[it % 4].toInt()).toByte() } else raw
         return Frame(b0, opcode, masked, key, payload, end)

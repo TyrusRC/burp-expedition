@@ -1,6 +1,7 @@
 package expedition.matchreplace
 
 import expedition.dissector.DissectorRegistry
+import expedition.dissector.MysqlDissector
 import expedition.dissector.ProtobufDissector
 import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Test
@@ -42,6 +43,17 @@ class DissectorAwareMatchReplaceTest {
 
         // With no registry the decoded rule cannot run, so bytes pass through unchanged.
         assertArrayEquals(protobufFoo, engine.apply(protobufFoo))
+    }
+
+    @Test
+    fun `a decoded rule that does not match leaves the message byte-identical`() {
+        val registry = DissectorRegistry().apply { register(MysqlDissector()) }
+        val engine = MatchReplaceEngine(registry)
+        engine.addRule(MatchReplaceRule(1, MatchType.LITERAL_STRING, "willnotmatch", "x", decoded = true))
+        // MySQL COM_QUERY with sequence id 5 — re-encoding would reset it to 0, so if the rule
+        // doesn't match we must NOT re-encode.
+        val bytes = byteArrayOf(0x09, 0, 0, 0x05, 0x03) + "SELECT 1".toByteArray()
+        assertArrayEquals(bytes, engine.apply(bytes))
     }
 
     @Test

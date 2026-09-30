@@ -46,6 +46,13 @@ class WebSocketDissectorTest {
     }
 
     @Test
+    fun `parse rejects an overflowing length instead of throwing`() {
+        // opcode 2, unmasked, 8-byte length = 0x7FFFFFFF; pos+len overflows Int — must reject, not crash.
+        val f = byteArrayOf(0x82.toByte(), 0x7F, 0, 0, 0, 0, 0x7F, 0xFF.toByte(), 0xFF.toByte(), 0xFF.toByte())
+        assertFalse(d.supports(wsMsg(f)))
+    }
+
+    @Test
     fun `supports a valid frame and rejects non-frames`() {
         assertTrue(d.supports(wsMsg(textFrame)))
         assertFalse(d.supports(wsMsg(byteArrayOf())))

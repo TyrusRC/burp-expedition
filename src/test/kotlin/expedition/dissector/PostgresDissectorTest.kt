@@ -48,6 +48,20 @@ class PostgresDissectorTest {
     }
 
     @Test
+    fun `parse rejects a length that would overflow instead of throwing`() {
+        // 'Q' + length 0x7FFFFFFF — 1 + length overflows Int; must be rejected, not crash.
+        assertFalse(d.supports(pgMsg(byteArrayOf('Q'.code.toByte(), 0x7F, 0xFF.toByte(), 0xFF.toByte(), 0xFF.toByte()))))
+    }
+
+    @Test
+    fun `round-trips a multi-line query without truncation`() {
+        val sql = "SELECT id\nFROM t"
+        val body = sql.toByteArray() + byteArrayOf(0)
+        val bytes = byteArrayOf('Q'.code.toByte()) + intBytes(4 + body.size) + body
+        assertArrayEquals(bytes, d.parseEdit(d.render(pgMsg(bytes)), pgMsg(bytes)))
+    }
+
+    @Test
     fun `supports a valid Postgres message and rejects non-Postgres`() {
         assertTrue(d.supports(pgMsg(query)))
         assertFalse(d.supports(pgMsg(byteArrayOf(1, 2, 3))))

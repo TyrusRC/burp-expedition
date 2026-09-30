@@ -33,7 +33,8 @@ class MatchReplaceEngine(private val dissectorRegistry: DissectorRegistry? = nul
         if (decodedRules.isNotEmpty() && dissectorRegistry != null) {
             val message = ProxyMessage(0, 0, Direction.CLIENT_TO_UPSTREAM, Instant.now(), current)
             val dissector = dissectorRegistry.dissectorFor(message)
-            var text = dissector.render(message)
+            val before = dissector.render(message)
+            var text = before
             for (rule in decodedRules) {
                 text = when (rule.matchType) {
                     MatchType.LITERAL_STRING -> text.replace(rule.matchValue, rule.replaceValue)
@@ -41,7 +42,9 @@ class MatchReplaceEngine(private val dissectorRegistry: DissectorRegistry? = nul
                     MatchType.LITERAL_BYTES -> text // hex-byte matching is meaningless on decoded text
                 }
             }
-            current = dissector.parseEdit(text, message)
+            // Only re-encode when a rule actually changed the decoded view — otherwise a
+            // non-bit-exact round-trip would corrupt traffic no rule even matched.
+            if (text != before) current = dissector.parseEdit(text, message)
         }
         return current
     }

@@ -38,8 +38,10 @@ class PostgresDissector : Dissector {
 
     override fun parseEdit(edited: String, original: ProxyMessage): ByteArray {
         val lines = edited.split("\n").map { it.trim() }
-        if (lines.firstOrNull() == "PG Query") {
-            val sql = lines.firstOrNull { it.startsWith("sql:") }?.substringAfter("sql:")?.trim() ?: ""
+        if (edited.startsWith("PG Query")) {
+            // Everything after the "sql:" marker is the query — preserve newlines and spaces
+            // (splitting on "\n" / trimming would silently truncate multi-line SQL).
+            val sql = edited.substringAfter("sql:").removePrefix(" ")
             val bodyLen = sql.toByteArray(Charsets.UTF_8).size + 1 // + NUL terminator
             val out = ArrayList<Byte>()
             out.add('Q'.code.toByte())
@@ -59,9 +61,9 @@ class PostgresDissector : Dissector {
         if (type !in typeNames.keys) return null
         val length = ((bytes[1].toInt() and 0xff) shl 24) or ((bytes[2].toInt() and 0xff) shl 16) or
             ((bytes[3].toInt() and 0xff) shl 8) or (bytes[4].toInt() and 0xff)
-        if (length < 4) return null
+        // Guard with Long before `1 + length` (which would overflow Int for a huge length).
+        if (length < 4 || length.toLong() + 1 > bytes.size) return null
         val total = 1 + length // type byte is not counted in the length field
-        if (total > bytes.size) return null
         return Msg(type, bytes.copyOfRange(5, total), total)
     }
 

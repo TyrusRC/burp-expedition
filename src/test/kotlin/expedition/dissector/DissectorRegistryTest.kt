@@ -42,6 +42,17 @@ class DissectorRegistryTest {
     }
 
     @Test
+    fun `falls back to default when a dissector throws in supports`() {
+        val registry = DissectorRegistry()
+        registry.register(object : Dissector {
+            override fun supports(message: ProxyMessage): Boolean = throw RuntimeException("boom")
+            override fun render(message: ProxyMessage) = "X"
+            override fun parseEdit(edited: String, original: ProxyMessage) = original.rawBytes
+        })
+        assertTrue(registry.dissectorFor(message(byteArrayOf(1, 2, 3))) is HexStringDissector)
+    }
+
+    @Test
     fun `registry prefers a registered dissector that supports the message`() {
         val registry = DissectorRegistry()
         val custom = object : Dissector {

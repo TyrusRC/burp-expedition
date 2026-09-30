@@ -141,8 +141,10 @@ class ControlApiServer(
                 proxyStr.substring(idx + 1).toInt().also { require(it in 1..65535) { "upstream_proxy port 1-65535" } })
         }
         val certPath = Json.str(o, "client_cert")
-        val clientAuth = if (certPath.isBlank()) null
-            else expedition.engine.UpstreamClientAuth(java.io.File(certPath), Json.str(o, "client_cert_password").toCharArray())
+        val clientAuth = if (certPath.isBlank()) null else {
+            require(java.io.File(certPath).exists()) { "client_cert not found: $certPath" }
+            expedition.engine.UpstreamClientAuth(java.io.File(certPath), Json.str(o, "client_cert_password").toCharArray())
+        }
 
         val cfg = ListenerConfig(
             name = name,

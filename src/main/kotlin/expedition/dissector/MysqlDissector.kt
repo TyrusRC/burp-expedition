@@ -30,8 +30,9 @@ class MysqlDissector : Dissector {
 
     override fun parseEdit(edited: String, original: ProxyMessage): ByteArray {
         val lines = edited.split("\n").map { it.trim() }
-        if (lines.firstOrNull() == "MySQL Query") {
-            val sql = lines.firstOrNull { it.startsWith("sql:") }?.substringAfter("sql:")?.trim() ?: ""
+        if (edited.startsWith("MySQL Query")) {
+            // Preserve the full query after the "sql:" marker (newlines/spaces included).
+            val sql = edited.substringAfter("sql:").removePrefix(" ")
             val sqlBytes = sql.toByteArray(Charsets.UTF_8)
             val payloadLen = 1 + sqlBytes.size // command byte + sql
             val out = ArrayList<Byte>()

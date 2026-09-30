@@ -10,5 +10,7 @@ class DissectorRegistry(private val defaultDissector: Dissector = HexStringDisse
     }
 
     fun dissectorFor(message: ProxyMessage): Dissector =
-        dissectors.firstOrNull { it.supports(message) } ?: defaultDissector
+        // A buggy/throwing supports() (e.g. on crafted bytes) must never crash the caller
+        // (History/Intercept render, or the decoded match-replace path) — fall through to the next.
+        dissectors.firstOrNull { runCatching { it.supports(message) }.getOrDefault(false) } ?: defaultDissector
 }

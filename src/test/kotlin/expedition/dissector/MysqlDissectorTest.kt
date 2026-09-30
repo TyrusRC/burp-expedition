@@ -37,6 +37,14 @@ class MysqlDissectorTest {
     }
 
     @Test
+    fun `round-trips a multi-line query without truncation`() {
+        val sql = "SELECT id\nFROM t"
+        val payload = byteArrayOf(0x03) + sql.toByteArray()
+        val bytes = byteArrayOf((payload.size and 0xff).toByte(), 0, 0, 0x00) + payload
+        assertArrayEquals(bytes, d.parseEdit(d.render(myMsg(bytes)), myMsg(bytes)))
+    }
+
+    @Test
     fun `supports a valid MySQL packet and rejects non-MySQL`() {
         assertTrue(d.supports(myMsg(query)))
         assertFalse(d.supports(myMsg(byteArrayOf())))

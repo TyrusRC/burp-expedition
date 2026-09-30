@@ -129,6 +129,14 @@ class ControlApiEndToEndTest {
     }
 
     @Test
+    fun `a missing client_cert path is rejected, not accepted with 200`() {
+        val r = post("/listeners",
+            """{"name":"badcert","protocol":"tcp","bind_port":${freePort()},"upstream_host":"127.0.0.1","upstream_port":9,"tls":"mitm","client_cert":"/does/not/exist-xyz.p12"}""")
+        assertNotEquals(200, r.statusCode(), r.body())
+        assertTrue(r.body().contains("error"), r.body())
+    }
+
+    @Test
     fun `accepts a STARTTLS listener via the API`() {
         val port = freePort()
         val r = post("/listeners",
