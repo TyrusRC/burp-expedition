@@ -22,8 +22,21 @@ dependencies {
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
+// Target JVM 17 bytecode (Burp's minimum) but compile with whatever JDK runs Gradle
+// (Gradle 9 already requires 17+, so JDK 21 works). Deliberately NOT `jvmToolchain(17)`:
+// that pins the build to a JDK 17 *installation* and fails on machines that only have
+// JDK 21 unless they download one. `-Xjdk-release=17` limits the compile to the JDK 17
+// API so we cannot accidentally depend on a newer method that would break in Burp.
 kotlin {
-    jvmToolchain(17)
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+        freeCompilerArgs.add("-Xjdk-release=17")
+    }
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
 }
 
 tasks.test {
