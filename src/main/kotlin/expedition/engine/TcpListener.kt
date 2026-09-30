@@ -39,7 +39,7 @@ class TcpListener(
                     clientChannel.pipeline().addLast(
                         TcpClientHandler(config, registry, workerGroup, messageGate) { upstream, connection ->
                             if (config.tlsMode == TlsMode.MITM) {
-                                val clientSslContext = TcpTlsSupport.clientContext()
+                                val clientSslContext = TcpTlsSupport.clientContext(config.upstreamClientAuth)
                                 upstream.pipeline().addLast(clientSslContext.newHandler(upstream.alloc(), config.upstreamHost, config.upstreamPort))
                             }
                             upstream.pipeline().addLast(TcpUpstreamHandler(registry, connection.connectionId, connection))
