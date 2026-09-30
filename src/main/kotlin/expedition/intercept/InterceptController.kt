@@ -21,6 +21,15 @@ class InterceptController {
 
     fun setEnabled(enabled: Boolean) {
         interceptEnabled = enabled
+        // Turning intercept OFF must release anything already held — otherwise
+        // those connections stall forever and the maps leak (Burp forwards held
+        // items on toggle-off too). Forward each held message UNCHANGED.
+        if (!enabled) {
+            for (id in held.keys.toList()) {
+                val hm = held.remove(id)
+                pending.remove(id)?.complete(InterceptDecision.Forward(hm?.bytes ?: ByteArray(0)))
+            }
+        }
     }
 
     fun isEnabled(): Boolean = interceptEnabled
