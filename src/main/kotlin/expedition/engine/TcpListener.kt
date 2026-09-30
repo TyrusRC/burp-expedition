@@ -37,21 +37,18 @@ class TcpListener(
                         val serverSslContext = TcpTlsSupport.serverContext(provider, config.upstreamHost)
                         clientChannel.pipeline().addLast(serverSslContext.newHandler(clientChannel.alloc()))
                     }
-                    // STARTTLS: start plaintext, upgrade both legs when the negotiation completes.
+                    // STARTTLS: start plaintext; detection + upgrade run inside the relay (post-gate).
                     val startTls = if (config.tlsMode == TlsMode.STARTTLS) {
                         val provider = certificateProvider
                             ?: throw IllegalStateException("Listener '${config.name}' requires STARTTLS but no BurpCertificateProvider was configured")
-                        val coordinator = StartTlsCoordinator(StartTlsDetector(), clientChannel, provider, config)
-                        clientChannel.pipeline().addLast(coordinator.clientObserver())
-                        coordinator
+                        StartTlsCoordinator(StartTlsDetector(), provider, config)
                     } else null
                     clientChannel.pipeline().addLast(
-                        TcpClientHandler(config, registry, workerGroup, messageGate) { upstream, connection ->
+                        TcpClientHandler(config, registry, workerGroup, messageGate, startTls) { upstream, connection ->
                             if (config.tlsMode == TlsMode.MITM) {
                                 val clientSslContext = TcpTlsSupport.clientContext(config.upstreamClientAuth)
                                 upstream.pipeline().addLast(clientSslContext.newHandler(upstream.alloc(), config.upstreamHost, config.upstreamPort))
                             }
-                            if (startTls != null) upstream.pipeline().addLast(startTls.upstreamObserver())
                             upstream.pipeline().addLast(TcpUpstreamHandler(registry, connection.connectionId, connection))
                         }
                     )

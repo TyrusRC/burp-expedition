@@ -36,6 +36,12 @@ class DefaultCaTest {
     }
 
     @Test
+    fun `leaves no temp file behind (atomic write)`() {
+        DefaultCa.ensureDefaultCa(dir, pw)
+        assertFalse(File(dir, "expedition-ca.p12.tmp").exists())
+    }
+
+    @Test
     fun `the CA key file is not world-readable on POSIX`() {
         val p12 = DefaultCa.ensureDefaultCa(dir, pw)
         val perms = try {

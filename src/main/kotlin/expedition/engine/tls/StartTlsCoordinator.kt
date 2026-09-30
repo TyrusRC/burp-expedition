@@ -3,54 +3,42 @@ package expedition.engine.tls
 import expedition.engine.ListenerConfig
 import expedition.engine.StartTlsDetector
 import expedition.tls.BurpCertificateProvider
-import io.netty.buffer.ByteBuf
-import io.netty.buffer.ByteBufUtil
 import io.netty.channel.Channel
-import io.netty.channel.ChannelHandlerContext
-import io.netty.channel.ChannelInboundHandlerAdapter
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Drives a plaintext→TLS (STARTTLS) upgrade on a live relay. Two observer handlers feed
- * the [StartTlsDetector] the plaintext of each direction; when the server's go-ahead is
- * seen, the SslHandlers are inserted on both legs — the go-ahead itself has already been
- * written to the client in plaintext by the time the (event-loop-scheduled) insertion runs,
- * so the record boundary is respected.
+ * Drives a plaintext→TLS (STARTTLS) upgrade on a live relay. Detection runs on the bytes
+ * actually FORWARDED through the message gate (i.e. after any interceptor hold/edit), not on
+ * raw pipeline bytes — so it stays correct when Intercept is enabled: the plaintext go-ahead
+ * is delivered to the client first, and only then are the TLS handlers inserted.
  *
- * NOTE: assumes the STARTTLS negotiation is not being held in the interceptor (the norm —
- * you intercept application data, not the handshake). One upgrade per connection.
+ * NOTE: one upgrade per connection. The SslHandler is inserted via the channel's event loop,
+ * which runs after the just-issued go-ahead write is already queued on that loop.
  */
 class StartTlsCoordinator(
-    val detector: StartTlsDetector,
-    private val clientChannel: Channel,
+    private val detector: StartTlsDetector,
     private val provider: BurpCertificateProvider,
     private val config: ListenerConfig
 ) {
-    @Volatile private var upgraded = false
+    private val upgraded = AtomicBoolean(false)
 
-    fun clientObserver(): ChannelInboundHandlerAdapter = object : ChannelInboundHandlerAdapter() {
-        override fun channelRead(ctx: ChannelHandlerContext, msg: Any) {
-            if (!upgraded && msg is ByteBuf) detector.onClientData(ByteBufUtil.getBytes(msg))
-            ctx.fireChannelRead(msg)
-        }
+    /** Feed client→upstream bytes as forwarded to the upstream (post-intercept). */
+    fun onClientForwarded(bytes: ByteArray) {
+        if (!upgraded.get()) detector.onClientData(bytes)
     }
 
-    fun upstreamObserver(): ChannelInboundHandlerAdapter = object : ChannelInboundHandlerAdapter() {
-        override fun channelRead(ctx: ChannelHandlerContext, msg: Any) {
-            val trigger = !upgraded && msg is ByteBuf && detector.onUpstreamData(ByteBufUtil.getBytes(msg))
-            ctx.fireChannelRead(msg)
-            if (trigger) upgrade(ctx.channel())
-        }
-    }
+    /** True if this forwarded upstream→client chunk is the server's go-ahead (upgrade needed). */
+    fun isGoAhead(bytes: ByteArray): Boolean = !upgraded.get() && detector.onUpstreamData(bytes)
 
-    private fun upgrade(upstreamChannel: Channel) {
-        if (upgraded) return
-        upgraded = true
-        // Client leg: terminate the client's TLS with a Burp-CA-signed leaf.
-        clientChannel.eventLoop().execute {
-            val serverCtx = TcpTlsSupport.serverContext(provider, config.upstreamHost)
-            clientChannel.pipeline().addFirst("starttls-server-ssl", serverCtx.newHandler(clientChannel.alloc()))
-        }
-        // Upstream leg: open TLS to the real server.
+    /**
+     * Insert the TLS handlers on both legs. Call from the CLIENT channel's event loop — e.g. the
+     * go-ahead write's completion listener — so the client-side SslHandler is in place before the
+     * client's ClientHello can arrive, while the plaintext go-ahead is already flushed.
+     */
+    fun upgrade(clientChannel: Channel, upstreamChannel: Channel) {
+        if (!upgraded.compareAndSet(false, true)) return
+        val serverCtx = TcpTlsSupport.serverContext(provider, config.upstreamHost)
+        clientChannel.pipeline().addFirst("starttls-server-ssl", serverCtx.newHandler(clientChannel.alloc()))
         upstreamChannel.eventLoop().execute {
             val clientCtx = TcpTlsSupport.clientContext(config.upstreamClientAuth)
             upstreamChannel.pipeline().addFirst(

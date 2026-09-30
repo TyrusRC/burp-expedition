@@ -76,6 +76,54 @@ class StartTlsListenerTest {
         }
     }
 
+    @Test
+    fun `upgrades correctly with Intercept enabled (go-ahead delivered before the TLS handlers)`() {
+        Security.addProvider(BouncyCastleProvider())
+        val caFile = keystore(File(tempDir, "ca-i.p12"), "Test CA I", ca = true)
+        val certProvider = BurpCertificateProvider(caFile, password)
+        val serverFile = keystore(File(tempDir, "server-i.p12"), "upstream.test", ca = false)
+
+        StartTlsEchoServer(serverFile, password).use { echo ->
+            val boss = NioEventLoopGroup(1); val worker = NioEventLoopGroup()
+            val registry = ConnectionRegistry()
+            val intercept = InterceptController().apply { setEnabled(true) }
+            val held = java.util.concurrent.LinkedBlockingQueue<Pair<Long, ByteArray>>()
+            // Simulate a user who forwards held messages after a short delay — the delay is what
+            // used to let the upgrade fire before the plaintext go-ahead was delivered.
+            val gate = MessageGate(registry, intercept, MatchReplaceEngine()) { id, _, _, bytes -> held.put(id to bytes) }
+            val running = java.util.concurrent.atomic.AtomicBoolean(true)
+            Thread {
+                while (running.get()) {
+                    val h = held.poll(50, java.util.concurrent.TimeUnit.MILLISECONDS) ?: continue
+                    intercept.forward(h.first, h.second)
+                }
+            }.apply { isDaemon = true; start() }
+
+            val config = ListenerConfig("stls-i", Protocol.TCP, "127.0.0.1", 0, "127.0.0.1", echo.port, TlsMode.STARTTLS)
+            val listener = TcpListener(config, registry, boss, worker, gate, certProvider)
+            try {
+                val port = (listener.start().sync().channel().localAddress() as java.net.InetSocketAddress).port
+                val plain = Socket("127.0.0.1", port).apply { soTimeout = 8000 }
+                plain.getOutputStream().write("STARTTLS\r\n".toByteArray()); plain.getOutputStream().flush()
+                assertTrue(readLine(plain.getInputStream()).startsWith("220"))
+
+                val trust = KeyStore.getInstance("PKCS12").apply { load(null, null); setCertificateEntry("ca", certProvider.caCertificate) }
+                val tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm()).apply { init(trust) }
+                val sslCtx = SSLContext.getInstance("TLS").apply { init(null, tmf.trustManagers, null) }
+                (sslCtx.socketFactory.createSocket(plain, "127.0.0.1", port, true) as SSLSocket).use { tls ->
+                    tls.useClientMode = true; tls.startHandshake()
+                    tls.outputStream.write("secret".toByteArray()); tls.outputStream.flush()
+                    val buf = ByteArray(6); var total = 0
+                    while (total < 6) { val r = tls.inputStream.read(buf, total, 6 - total); if (r < 0) break; total += r }
+                    assertEquals("secret", String(buf))
+                }
+            } finally {
+                running.set(false)
+                listener.stop(); boss.shutdownGracefully().sync(); worker.shutdownGracefully().sync()
+            }
+        }
+    }
+
     private fun readLine(input: InputStream): String {
         val sb = StringBuilder()
         while (true) {

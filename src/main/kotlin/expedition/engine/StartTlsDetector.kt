@@ -14,8 +14,8 @@ package expedition.engine
  */
 class StartTlsDetector {
 
-    private var pendingText = false
-    private var pendingPostgres = false
+    @Volatile private var pendingText = false
+    @Volatile private var pendingPostgres = false
 
     private val pgSslRequest = byteArrayOf(0x00, 0x00, 0x00, 0x08, 0x04, 0xd2.toByte(), 0x16, 0x2f)
 

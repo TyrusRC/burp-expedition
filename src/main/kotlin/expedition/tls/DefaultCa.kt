@@ -55,8 +55,13 @@ object DefaultCa {
         val ks = KeyStore.getInstance("PKCS12")
         ks.load(null, password)
         ks.setKeyEntry(ALIAS, keyPair.private, password, arrayOf(cert))
-        p12.outputStream().use { ks.store(it, password) }
-        restrictToOwner(p12)   // the keystore holds a CA private key — not world-readable
+        // Write to a temp file, restrict perms before the key bytes land, then atomically rename —
+        // so a crash mid-write never leaves a half-written keystore that later loads treat as valid.
+        val tmp = File(dir, "$CA_FILE.tmp")
+        tmp.createNewFile()
+        restrictToOwner(tmp)   // the keystore holds a CA private key — not world-readable
+        tmp.outputStream().use { ks.store(it, password) }
+        java.nio.file.Files.move(tmp.toPath(), p12.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE)
 
         // Export the cert (PEM) for installing into clients that don't trust Burp's CA.
         val pem = "-----BEGIN CERTIFICATE-----\n" +

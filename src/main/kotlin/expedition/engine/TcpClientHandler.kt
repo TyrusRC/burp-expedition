@@ -14,6 +14,7 @@ class TcpClientHandler(
     private val registry: ConnectionRegistry,
     private val workerGroup: EventLoopGroup,
     private val messageGate: MessageGate,
+    private val startTls: expedition.engine.tls.StartTlsCoordinator? = null,
     private val upstreamPipelineBuilder: (SocketChannel, TcpConnection) -> Unit
 ) : ChannelInboundHandlerAdapter() {
     private lateinit var connection: TcpConnection
@@ -24,7 +25,7 @@ class TcpClientHandler(
             config.name, Protocol.TCP, ctx.channel().remoteAddress().toString(),
             "${config.upstreamHost}:${config.upstreamPort}"
         )
-        connection = TcpConnection(connectionId, config, ctx.channel(), messageGate)
+        connection = TcpConnection(connectionId, config, ctx.channel(), messageGate, startTls)
         connection.connectUpstream(workerGroup) { upstream -> upstreamPipelineBuilder(upstream, connection) }
     }
 
