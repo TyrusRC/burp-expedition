@@ -21,6 +21,7 @@ class ExpeditionExtension : BurpExtension {
         // below Redis and the text dissector: Redis -> text -> Protobuf -> hex default.
         dissectorRegistry.register(expedition.dissector.ProtobufDissector())
         dissectorRegistry.register(expedition.dissector.MqttDissector())
+        dissectorRegistry.register(expedition.dissector.DnsDissector())
         dissectorRegistry.register(expedition.dissector.LineProtocolDissector())
         dissectorRegistry.register(expedition.dissector.RedisDissector())
         val matchReplaceEngine = MatchReplaceEngine()
