@@ -21,6 +21,9 @@ class ExpeditionExtension : BurpExtension {
         // below Redis and the text dissector: Redis -> text -> Protobuf -> hex default.
         dissectorRegistry.register(expedition.dissector.ProtobufDissector())
         dissectorRegistry.register(expedition.dissector.PostgresDissector())
+        dissectorRegistry.register(expedition.dissector.MysqlDissector())
+        dissectorRegistry.register(expedition.dissector.MongoDissector())
+        dissectorRegistry.register(expedition.dissector.WebSocketDissector())
         dissectorRegistry.register(expedition.dissector.MqttDissector())
         dissectorRegistry.register(expedition.dissector.DnsDissector())
         dissectorRegistry.register(expedition.dissector.LineProtocolDissector())
