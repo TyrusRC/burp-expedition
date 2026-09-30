@@ -24,6 +24,8 @@ class ExpeditionExtension : BurpExtension {
         dissectorRegistry.register(expedition.dissector.MysqlDissector())
         dissectorRegistry.register(expedition.dissector.MongoDissector())
         dissectorRegistry.register(expedition.dissector.WebSocketDissector())
+        dissectorRegistry.register(expedition.dissector.ModbusDissector())
+        dissectorRegistry.register(expedition.dissector.Dnp3Dissector())
         dissectorRegistry.register(expedition.dissector.MqttDissector())
         dissectorRegistry.register(expedition.dissector.DnsDissector())
         dissectorRegistry.register(expedition.dissector.LineProtocolDissector())
