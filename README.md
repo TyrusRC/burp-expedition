@@ -35,21 +35,33 @@ hex/string, line/text, Redis (RESP), **Protobuf**, **DNS**, **MQTT**, **PostgreS
 
 ## Build
 
-Requires JDK 17+.
+Requires a **JDK 17 or newer** on `PATH` (JDK 21 is fine — the build targets JVM 17
+bytecode regardless, so it loads in Burp's bundled JRE). No separate Gradle install is
+needed; the wrapper fetches everything.
 
 ```sh
+# macOS / Linux
 ./gradlew shadowJar
+
+# Windows (PowerShell / cmd)
+gradlew.bat shadowJar
 ```
 
-Produces the extension at `build/libs/burp-expedition-0.1.0.jar`. Bundled
-dependencies (Netty, Bouncy Castle) are relocated under `expedition.shaded.*`;
-the Montoya API is `compileOnly` and supplied by Burp at runtime.
+Produces a self-contained extension at `build/libs/burp-expedition-0.1.0.jar`. Bundled
+dependencies (Netty, Bouncy Castle) are relocated under `expedition.shaded.*`; the Montoya
+API is `compileOnly` and supplied by Burp at runtime. Pure-JVM (Nio transport), so the same
+jar runs on macOS, Linux, and Windows.
 
 ## Install
 
-Burp → **Extensions** → **Add** → Extension type: **Java** → select the built jar.
-An **Expedition** tab appears with four sub-tabs: Listeners, Intercept, History,
-Match & Replace.
+1. Build the jar (above), or copy a prebuilt `burp-expedition-0.1.0.jar`.
+2. In Burp: **Extensions** → **Add** → Extension type: **Java** → select the jar.
+3. The extension loads as **"Burp Expedition v0.1.0"** and adds an **Expedition** suite tab
+   with four sub-tabs: Listeners, Intercept, History, Match & Replace. TLS works out of the
+   box via an auto-generated CA (see below).
+
+To update: rebuild, then in **Extensions** untick and re-tick the extension (or remove and
+re-add) to reload the new jar.
 
 ## TLS MITM setup
 
@@ -123,6 +135,61 @@ no transparent/OS-level redirection. UDP listeners are plaintext (no TLS/STARTTL
 dissectors decode the common cases per protocol; anything beyond their documented editable
 fields falls back to hex. Pure-JVM (Nio transport only), so it runs the same on Linux,
 macOS, and Windows.
+
+## Troubleshooting
+
+### Build fails: `PKIX path building failed` / `SSL handshake exception` when downloading dependencies
+
+Your network has a **TLS-intercepting proxy** (common on corporate/VPN networks): it re-signs
+HTTPS with a company root CA that the JDK's truststore doesn't trust, so Gradle can't download
+the Kotlin/Shadow plugins. The error looks like:
+
+```
+Could not download kotlin-compiler-embeddable-...jar
+Got SSL handshake exception ... PKIX path building failed:
+  unable to find valid certification path to requested target
+```
+
+Fix: import your corporate root CA into the **JDK** truststore (it's not about this project —
+it affects any Gradle/Java build on that network). First confirm which JDK Gradle uses:
+
+```sh
+./gradlew --version    # note the "JVM: ..." line
+```
+
+**Get the corporate root CA** — export it from your OS trust store, or:
+```sh
+openssl s_client -showcerts -connect plugins.gradle.org:443 </dev/null 2>/dev/null \
+  | awk '/BEGIN CERT/,/END CERT/' > corp-root.pem   # last block = the proxy's root CA
+```
+
+**Import it into that JDK** (`-cacerts` targets the running keytool's JDK — export
+`JAVA_HOME` to the one from `--version` first; needs admin/sudo):
+
+```sh
+# macOS
+export JAVA_HOME=$(/usr/libexec/java_home -v 21)
+sudo keytool -importcert -trustcacerts -cacerts -storepass changeit -alias corp-root -noprompt -file corp-root.pem
+
+# Linux
+sudo keytool -importcert -trustcacerts -cacerts -storepass changeit -alias corp-root -noprompt -file corp-root.pem
+
+# Windows (admin PowerShell) — adjust to your JDK path
+& "$env:JAVA_HOME\bin\keytool.exe" -importcert -trustcacerts -cacerts -storepass changeit -alias corp-root -noprompt -file corp-root.pem
+```
+
+Then rebuild. **macOS shortcut:** since the CA is already in your keychain, you can instead add
+`systemProp.javax.net.ssl.trustStoreType=KeychainStore` to `~/.gradle/gradle.properties`.
+If your network also requires an explicit proxy, set `systemProp.https.proxyHost` /
+`systemProp.https.proxyPort` there too. Never disable TLS verification to work around this.
+
+If the machine is too locked down to fetch dependencies at all, build on an unrestricted
+machine and copy the self-contained `build/libs/burp-expedition-0.1.0.jar` over.
+
+### `Cannot find a Java installation ... matching ... languageVersion=17`
+
+An older build pinned a JDK 17 *toolchain*. The current build compiles with whatever JDK runs
+Gradle (≥17) and targets JVM 17, so just use a JDK 17+ — no separate JDK 17 install needed.
 
 ## License
 
