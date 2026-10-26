@@ -21,6 +21,7 @@ class ExpeditionExtension : BurpExtension {
         // Protobuf's heuristic is eager and matches only non-text binary, so it sits
         // below Redis and the text dissector: Redis -> text -> Protobuf -> hex default.
         dissectorRegistry.register(expedition.dissector.ProtobufDissector())
+        dissectorRegistry.register(expedition.dissector.Http2FrameDissector())
         dissectorRegistry.register(expedition.dissector.PostgresDissector())
         dissectorRegistry.register(expedition.dissector.MysqlDissector())
         dissectorRegistry.register(expedition.dissector.MongoDissector())
@@ -29,6 +30,9 @@ class ExpeditionExtension : BurpExtension {
         dissectorRegistry.register(expedition.dissector.Dnp3Dissector())
         dissectorRegistry.register(expedition.dissector.MqttDissector())
         dissectorRegistry.register(expedition.dissector.DnsDissector())
+        dissectorRegistry.register(expedition.dissector.StunDissector())
+        dissectorRegistry.register(expedition.dissector.QuicDissector())
+        dissectorRegistry.register(expedition.dissector.QuicDissector())
         dissectorRegistry.register(expedition.dissector.LineProtocolDissector())
         dissectorRegistry.register(expedition.dissector.RedisDissector())
         val matchReplaceEngine = MatchReplaceEngine(dissectorRegistry)
