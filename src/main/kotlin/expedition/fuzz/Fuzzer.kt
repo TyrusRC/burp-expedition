@@ -25,6 +25,11 @@ class Fuzzer(private val sender: ReplaySender = ReplaySender()) {
         timeoutMillis: Long = 2000
     ): List<Case> = (0 until iterations).map {
         val input = mutator.mutate(seed)
-        Case(input, sender.replay(protocol, host, port, input, timeoutMillis))
+        val response = try {
+            sender.replay(protocol, host, port, input, timeoutMillis)
+        } catch (_: Exception) {
+            byteArrayOf()
+        }
+        Case(input, response)
     }
 }

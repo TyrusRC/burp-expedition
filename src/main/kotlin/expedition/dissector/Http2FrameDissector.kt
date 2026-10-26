@@ -60,7 +60,18 @@ class Http2FrameDissector : Dissector {
         val length = ((b[0].toInt() and 0xff) shl 16) or
                      ((b[1].toInt() and 0xff) shl 8) or
                       (b[2].toInt() and 0xff)
-        return length >= 0 && length <= 16_777_215 && (9 + length) <= b.size + 1024
+        if (length < 0 || length > 16_777_215) return false
+        // Exact fit: the first frame must fit within the message.
+        // If multiple frames, a second frame header should start at 9+length.
+        if (9 + length > b.size) return false
+        val nextOffset = 9 + length
+        if (nextOffset < b.size) {
+            // Verify a plausible second frame header follows.
+            if (nextOffset + 9 > b.size) return false
+            val nextType = b[nextOffset + 3].toInt() and 0xff
+            if (nextType > 9) return false
+        }
+        return true
     }
 
     override fun render(message: ProxyMessage): String {
