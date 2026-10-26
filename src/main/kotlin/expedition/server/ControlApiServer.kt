@@ -11,6 +11,8 @@ import expedition.matchreplace.MatchType
 import expedition.registry.ConnectionRegistry
 import expedition.registry.Protocol
 import expedition.registry.ProxyMessage
+import expedition.fuzz.ByteMutator
+import expedition.fuzz.Fuzzer
 import expedition.ui.ReplaySender
 import java.net.InetSocketAddress
 import java.nio.charset.StandardCharsets
@@ -91,6 +93,7 @@ class ControlApiServer(
                 messages(ex, path.split("/")[2].toLong())
             method == "GET" && path == "/messages" -> allMessages(ex)
             method == "POST" && path == "/repeat" -> repeat(ex)
+            method == "POST" && path == "/fuzz" -> fuzz(ex)
             method == "GET" && path == "/matchreplace" -> listRules(ex)
             method == "POST" && path == "/matchreplace" -> addRule(ex)
             method == "DELETE" && path.startsWith("/matchreplace/") -> {
@@ -197,6 +200,41 @@ class ControlApiServer(
         send(ex, 200, Json.obj(
             "sent_len" to bytes.size, "response_len" to resp.size,
             "response_hex" to toHex(resp), "response_text" to preview(resp),
+        ))
+    }
+
+    private fun fuzz(ex: HttpExchange) {
+        val o = Json.asObject(Json.parse(body(ex)))
+        val proto = Protocol.valueOf(Json.str(o, "protocol", "TCP").uppercase())
+        val host = Json.str(o, "host").ifBlank { throw IllegalArgumentException("host required") }
+        val port = Json.int(o, "port").also { require(it in 1..65535) { "port 1-65535" } }
+        val hex = Json.str(o, "hex")
+        val seed = if (hex.isNotBlank()) fromHex(hex)
+                   else Json.str(o, "text").toByteArray(StandardCharsets.ISO_8859_1)
+        require(seed.isNotEmpty()) { "hex or text seed required" }
+        val iterations = Json.int(o, "iterations", 50).coerceIn(1, 500)
+        val timeout = Json.int(o, "timeout_ms", 2000).toLong()
+        val randomSeed = (o["random_seed"] as? Number)?.toLong() ?: System.currentTimeMillis()
+        val mutator = ByteMutator(kotlin.random.Random(randomSeed))
+        val fuzzer = Fuzzer(replaySender)
+        val cases = fuzzer.fuzz(proto, host, port, seed, iterations, mutator, timeout)
+        val results = cases.mapIndexed { i, c -> mapOf(
+            "index" to i,
+            "input_len" to c.input.size,
+            "response_len" to c.response.size,
+            "input_hex" to toHex(c.input).take(200),
+            "response_hex" to toHex(c.response).take(200),
+            "response_text" to preview(c.response),
+        ) }
+        val anomalies = cases.mapIndexedNotNull { i, c ->
+            if (c.response.isEmpty()) i else null
+        }
+        send(ex, 200, Json.obj(
+            "iterations" to cases.size,
+            "seed_len" to seed.size,
+            "anomalies" to anomalies.size,
+            "anomaly_indices" to anomalies.take(20),
+            "results" to results,
         ))
     }
 
