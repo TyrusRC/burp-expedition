@@ -22,8 +22,9 @@ rewrite arbitrary TCP and UDP traffic from inside Burp.
   bytes or to a dissector's decoded view (re-encoded with length/framing fixed).
 
 **Protocol dissectors** — pluggable SPI, auto-selected per message:
-hex/string, line/text, Redis (RESP), **Protobuf**, **DNS**, **MQTT**, **PostgreSQL**,
-**MySQL**, **MongoDB**, **WebSocket**, **Modbus/TCP**, **DNP3**.
+hex/string, line/text, Redis (RESP), **Protobuf**, **HTTP/2** (gRPC frame-level),
+**STUN/TURN** (RFC 5389), **QUIC** (Initial/Handshake SNI extraction), **DNS**,
+**MQTT**, **PostgreSQL**, **MySQL**, **MongoDB**, **WebSocket**, **Modbus/TCP**, **DNP3**.
 
 **Workflow**
 - **History** — connection/message log with connection replay, flow tagging, and JSON
@@ -104,6 +105,7 @@ as evidence, run the Repeater, and manage match-and-replace rules.
 | `GET /connections` | captured connection summaries |
 | `GET /connections/{id}/messages` · `GET /messages?limit=N` | captured messages (hex + ASCII preview) |
 | `POST /repeat` | Repeater — send a raw TCP/UDP payload, read the response |
+| `POST /fuzz` | Mutation fuzzer — send N mutated payloads, collect responses + anomalies |
 | `GET /matchreplace` · `POST /matchreplace` · `DELETE /matchreplace/{id}` | list / add / remove rules |
 | `GET /intercept` · `POST /intercept/enable` | held-message queue + toggle live intercept |
 | `POST /intercept/{id}/forward` · `POST /intercept/{id}/drop` | forward (edited or unchanged) / drop a held message |
