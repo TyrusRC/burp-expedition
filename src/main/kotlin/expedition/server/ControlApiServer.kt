@@ -6,6 +6,9 @@ import expedition.engine.ListenerConfig
 import expedition.engine.TlsMode
 import expedition.intercept.InterceptController
 import expedition.matchreplace.MatchReplaceEngine
+import expedition.session.FlowTagStore
+import expedition.session.SessionSnapshot
+import expedition.session.SessionStore
 import expedition.matchreplace.MatchReplaceRule
 import expedition.matchreplace.MatchType
 import expedition.registry.ConnectionRegistry
@@ -41,6 +44,7 @@ class ControlApiServer(
     private val runningListeners: () -> Set<String>,
     private val startSocks5Listener: (expedition.engine.Socks5ListenerConfig) -> Unit = {},
     private val replaySender: ReplaySender = ReplaySender(),
+    private val flowTagStore: FlowTagStore = FlowTagStore(),
     private val version: String = "0.1.0",
 ) {
     private var server: HttpServer? = null
@@ -107,6 +111,11 @@ class ControlApiServer(
             method == "POST" && path.matches(Regex("/intercept/\\d+/drop")) -> {
                 intercept.drop(path.split("/")[2].toLong()); send(ex, 200, Json.obj("ok" to true))
             }
+            method == "POST" && path.matches(Regex("/connections/\\d+/tag")) ->
+                tagConnection(ex, path.split("/")[2].toLong())
+            method == "GET" && path == "/messages/search" -> searchMessages(ex)
+            method == "POST" && path == "/session/save" -> sessionSave(ex)
+            method == "POST" && path == "/session/load" -> sessionLoad(ex)
             else -> send(ex, 404, Json.obj("error" to "no route: $method $path"))
         }
     }
@@ -165,11 +174,15 @@ class ControlApiServer(
     }
 
     private fun connections(ex: HttpExchange) = send(ex, 200, Json.arr(
-        registry.allConnections().map { c -> mapOf(
-            "id" to c.connectionId, "listener" to c.listenerName, "protocol" to c.protocol.name,
-            "client" to c.clientAddress, "upstream" to c.upstreamAddress,
-            "opened_at" to c.openedAt.toString(), "closed_at" to (c.closedAt?.toString()),
-        ) }
+        registry.allConnections().map { c ->
+            val tags = flowTagStore.tags(c.connectionId)
+            mapOf(
+                "id" to c.connectionId, "listener" to c.listenerName, "protocol" to c.protocol.name,
+                "client" to c.clientAddress, "upstream" to c.upstreamAddress,
+                "opened_at" to c.openedAt.toString(), "closed_at" to (c.closedAt?.toString()),
+                "tags" to tags.toList(),
+            )
+        }
     ))
 
     private fun messages(ex: HttpExchange, connId: Long) =
@@ -283,6 +296,75 @@ class ControlApiServer(
         }
         intercept.forward(id, edited)
         send(ex, 200, Json.obj("ok" to true, "forwarded_len" to edited.size))
+    }
+
+    // ── Tag / Search / Session ─────────────────────────────────────────
+    private fun tagConnection(ex: HttpExchange, connId: Long) {
+        val o = Json.asObject(Json.parse(body(ex)))
+        val color = Json.str(o, "color")
+        val comment = Json.str(o, "comment")
+        val tag = listOfNotNull(color.ifBlank { null }, comment.ifBlank { null }).joinToString("|")
+        if (tag.isBlank()) {
+            send(ex, 400, Json.obj("error" to "color or comment required")); return
+        }
+        flowTagStore.tag(connId, tag)
+        send(ex, 200, Json.obj("ok" to true, "tags" to flowTagStore.tags(connId).toList()))
+    }
+
+    private fun getConnectionTags(ex: HttpExchange, connId: Long) {
+        send(ex, 200, Json.obj("connection_id" to connId, "tags" to flowTagStore.tags(connId).toList()))
+    }
+
+    private fun exportSession(ex: HttpExchange) {
+        val snapshot = SessionSnapshot(
+            registry.allConnections(), registry.allMessages(), flowTagStore.all()
+        )
+        val json = SessionStore.export(snapshot)
+        send(ex, 200, json)
+    }
+
+    private fun searchMessages(ex: HttpExchange) {
+        val q = ex.requestURI.query?.split("&")?.firstOrNull { it.startsWith("q=") }
+            ?.substringAfter("=") ?: ""
+        if (q.isBlank()) { send(ex, 400, Json.obj("error" to "q= query param required")); return }
+        val limit = queryInt(ex, "limit", 50)
+        val matches = registry.allMessages()
+            .filter { preview(it.rawBytes).contains(q, ignoreCase = true) }
+            .takeLast(limit)
+        send(ex, 200, Json.arr(matches.map(::messageMap)))
+    }
+
+    private fun sessionSave(ex: HttpExchange) {
+        val o = Json.asObject(Json.parse(body(ex)))
+        val path = Json.str(o, "path").ifBlank { "expedition-session.json" }
+        val snapshot = SessionSnapshot(
+            registry.allConnections(), registry.allMessages(), flowTagStore.all()
+        )
+        val json = SessionStore.export(snapshot)
+        java.io.File(path).writeText(json, StandardCharsets.UTF_8)
+        send(ex, 200, Json.obj(
+            "ok" to true, "path" to path,
+            "connections" to snapshot.connections.size,
+            "messages" to snapshot.messages.size,
+            "tags" to snapshot.tags.size,
+        ))
+    }
+
+    private fun sessionLoad(ex: HttpExchange) {
+        val o = Json.asObject(Json.parse(body(ex)))
+        val path = Json.str(o, "path").ifBlank {
+            send(ex, 400, Json.obj("error" to "path required")); return
+        }
+        val file = java.io.File(path)
+        if (!file.exists()) { send(ex, 404, Json.obj("error" to "file not found: $path")); return }
+        val snapshot = SessionStore.import(file.readText(StandardCharsets.UTF_8))
+        flowTagStore.load(snapshot.tags)
+        send(ex, 200, Json.obj(
+            "ok" to true,
+            "connections" to snapshot.connections.size,
+            "messages" to snapshot.messages.size,
+            "tags" to snapshot.tags.size,
+        ))
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────
