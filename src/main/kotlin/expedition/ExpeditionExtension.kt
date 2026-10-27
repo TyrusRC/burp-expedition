@@ -37,6 +37,7 @@ class ExpeditionExtension : BurpExtension {
         dissectorRegistry.register(expedition.dissector.RedisDissector())
         val matchReplaceEngine = MatchReplaceEngine(dissectorRegistry)
         val interceptController = InterceptController()
+        val flowTagStore = expedition.session.FlowTagStore()
 
         // Auto-generate a per-machine default CA so TLS MITM / STARTTLS work out of the box.
         // Disable with EXPEDITION_AUTOCA_DISABLE=1; relocate with EXPEDITION_CA_DIR.
@@ -66,7 +67,8 @@ class ExpeditionExtension : BurpExtension {
             onStartListener = { config -> engine.startListener(config) },
             onStopListener = { name -> engine.stopListener(name) },
             onStartSocks5Listener = { config -> engine.startSocks5Listener(config) },
-            initialCertificateProvider = defaultCaProvider
+            initialCertificateProvider = defaultCaProvider,
+            flowTagStore = flowTagStore
         )
 
         api.userInterface().registerSuiteTab("Expedition", tab.component)
@@ -83,12 +85,11 @@ class ExpeditionExtension : BurpExtension {
                 host = bindHost, port = port,
                 registry = registry, matchReplace = matchReplaceEngine,
                 intercept = interceptController,
-                // API path uses the *Checked variants so a bind failure returns an HTTP
-                // error to the caller (curl/Praetor) instead of silently succeeding.
                 startListener = { engine.startListenerChecked(it) },
                 stopListener = { engine.stopListener(it) },
                 runningListeners = { engine.runningListenerNames() },
                 startSocks5Listener = { engine.startSocks5ListenerChecked(it) },
+                flowTagStore = flowTagStore,
             ).also {
                 it.start()
                 api.logging().logToOutput("Expedition control API on $bindHost:$port")

@@ -7,6 +7,7 @@ import expedition.intercept.InterceptController
 import expedition.matchreplace.MatchReplaceEngine
 import expedition.registry.ConnectionRegistry
 import expedition.registry.Direction
+import expedition.session.FlowTagStore
 import expedition.tls.BurpCertificateProvider
 import javax.swing.JComponent
 import javax.swing.JOptionPane
@@ -20,7 +21,8 @@ class ExpeditionTab(
     private val onStartListener: (ListenerConfig) -> Unit,
     private val onStopListener: (String) -> Unit,
     private val onStartSocks5Listener: (Socks5ListenerConfig) -> Unit = {},
-    initialCertificateProvider: BurpCertificateProvider? = null
+    initialCertificateProvider: BurpCertificateProvider? = null,
+    private val flowTagStore: FlowTagStore = FlowTagStore()
 ) {
     private val tabbedPane = JTabbedPane()
     val component: JComponent = tabbedPane
@@ -30,7 +32,7 @@ class ExpeditionTab(
     private var certificateProvider: BurpCertificateProvider? = initialCertificateProvider
 
     private val interceptPanel = InterceptPanel(interceptController, dissectorRegistry)
-    private val historyPanel = HistoryPanel(registry, dissectorRegistry)
+    private val historyPanel = HistoryPanel(registry, dissectorRegistry, flowTagStore)
     private val matchReplacePanel = MatchReplacePanel(matchReplaceEngine)
 
     init {
