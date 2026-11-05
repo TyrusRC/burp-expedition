@@ -21,6 +21,14 @@ class ExpeditionExtension : BurpExtension {
         val matchReplaceEngine = MatchReplaceEngine(dissectorRegistry)
         val interceptController = InterceptController()
         val flowTagStore = expedition.session.FlowTagStore()
+        // Operator scripting hook (JSR-223). Engine is discovered from the host classpath
+        // (Burp ships Groovy); a no-op if none is present. See ScriptHooks for the trust model.
+        val scriptHooks = expedition.script.ScriptHooks()
+        if (scriptHooks.engineAvailable)
+            api.logging().logToOutput("Expedition: scripting available (JSR-223 engine discovered).")
+        // DNS redirector (spoofing resolver). Owned here so the unload handler can stop it.
+        val dnsController = expedition.dns.DnsController(
+            onError = { msg -> api.logging().logToError("Expedition DNS: $msg") })
 
         // Auto-generate a per-machine default CA so TLS MITM / STARTTLS work out of the box.
         // Disable with EXPEDITION_AUTOCA_DISABLE=1; relocate with EXPEDITION_CA_DIR.
@@ -43,7 +51,8 @@ class ExpeditionExtension : BurpExtension {
             registry, interceptController, matchReplaceEngine,
             certificateProviderSupplier = { tab.currentCertificateProvider() },
             onHeldMessage = { id, connId, direction, bytes -> tab.onHeldMessage(id, connId, direction, bytes) },
-            onError = { name, message -> tab.onListenerError(name, message) }
+            onError = { name, message -> tab.onListenerError(name, message) },
+            scriptHooks = scriptHooks,
         )
         tab = ExpeditionTab(
             registry, dissectorRegistry, matchReplaceEngine, interceptController,
@@ -51,7 +60,9 @@ class ExpeditionExtension : BurpExtension {
             onStopListener = { name -> engine.stopListener(name) },
             onStartSocks5Listener = { config -> engine.startSocks5Listener(config) },
             initialCertificateProvider = defaultCaProvider,
-            flowTagStore = flowTagStore
+            flowTagStore = flowTagStore,
+            scriptHooks = scriptHooks,
+            dnsController = dnsController,
         )
 
         api.userInterface().registerSuiteTab("Expedition", tab.component)
@@ -80,6 +91,8 @@ class ExpeditionExtension : BurpExtension {
                 runningListeners = { engine.runningListenerNames() },
                 startSocks5Listener = { engine.startSocks5ListenerChecked(it) },
                 flowTagStore = flowTagStore,
+                scriptHooks = scriptHooks,
+                dnsController = dnsController,
                 authToken = apiToken,
             ).also {
                 it.start()
@@ -97,6 +110,7 @@ class ExpeditionExtension : BurpExtension {
 
         api.extension().registerUnloadingHandler(ExtensionUnloadingHandler {
             apiServer?.stop()
+            dnsController.stop()
             engine.shutdown()
         })
     }

@@ -31,6 +31,15 @@ hex/string, line/text, Redis (RESP), **Protobuf**, **HTTP/2** (gRPC frame-level)
 - **History** — connection/message log with connection replay, flow tagging, and JSON
   session save / restore / export.
 - **Fuzzer** — replay a captured payload with mutations over TCP/UDP.
+- **Scripting** — an optional JSR-223 hook (Scripting tab / `/script`) that transforms every
+  forwarded message. Engine-agnostic: uses whatever JSR-223 engine the host provides (Burp ships
+  Groovy); a no-op if none. Runs with full JVM privileges — operator-trusted, no sandbox.
+- **DNS redirector** — a spoofing resolver (DNS tab / `/dns`) that answers chosen hosts with an
+  attacker IP (A/AAAA, `*`/`*.suffix` wildcards, catch-all default) to pull a thick client's or
+  mobile app's traffic into the proxy. Binding port 53 needs root/admin.
+- **Dissectors** — pluggable protocol decoders: HTTP/2, protobuf, gRPC, WebSocket (incl. nested
+  protobuf), TLS (ClientHello/SNI), DNS, Redis, MySQL, Postgres, Mongo, AMQP, Kafka, LDAP, SMB2,
+  MQTT, Modbus, DNP3, STUN, QUIC.
 - **Control API** — an opt-in loopback JSON REST API (`:18112`) to drive listeners, history, the
   Repeater, intercept, and match-and-replace from automation (see below); exposed in
   Praetor as the `tcp_proxy_*` MCP tools.
@@ -116,6 +125,8 @@ as evidence, run the Repeater, and manage match-and-replace rules.
 | `POST /connections/{id}/tag` · `GET /connections/{id}/tags` | add a flow tag (`color`/`comment`) / read a connection's tags |
 | `GET /messages/search?q=…&limit=N` | messages whose ASCII preview contains `q` |
 | `POST /session/save` · `POST /session/load` · `GET /session/export` | save snapshot to a path / load tags from a path / return the snapshot JSON |
+| `GET /script` · `POST /script` · `DELETE /script` | script status / install (`source`; 400 on compile error) / clear the transform script |
+| `GET /dns` · `POST /dns/start` · `POST /dns/stop` | DNS redirector status / start (`rules:[{host,ip}]`, `default_ip`, `port`) / stop |
 
 Every request is checked for a loopback `Host` and rejected if it carries a cross-site
 `Origin` (CSRF / DNS-rebinding defense). Set `EXPEDITION_API_TOKEN` to require an

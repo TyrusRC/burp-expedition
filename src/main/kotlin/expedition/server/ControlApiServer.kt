@@ -45,6 +45,8 @@ class ControlApiServer(
     private val startSocks5Listener: (expedition.engine.Socks5ListenerConfig) -> Unit = {},
     private val replaySender: ReplaySender = ReplaySender(),
     private val flowTagStore: FlowTagStore = FlowTagStore(),
+    private val scriptHooks: expedition.script.ScriptHooks? = null,
+    private val dnsController: expedition.dns.DnsController? = null,
     private val version: String = "0.1.0",
     /**
      * When set, every request must carry `Authorization: Bearer <authToken>`. Null (the
@@ -137,6 +139,12 @@ class ControlApiServer(
             method == "GET" && path == "/session/export" -> exportSession(ex)
             method == "POST" && path == "/session/save" -> sessionSave(ex)
             method == "POST" && path == "/session/load" -> sessionLoad(ex)
+            method == "GET" && path == "/script" -> scriptStatus(ex)
+            method == "POST" && path == "/script" -> setScript(ex)
+            method == "DELETE" && path == "/script" -> clearScript(ex)
+            method == "GET" && path == "/dns" -> dnsStatus(ex)
+            method == "POST" && path == "/dns/start" -> dnsStart(ex)
+            method == "POST" && path == "/dns/stop" -> dnsStop(ex)
             else -> send(ex, 404, Json.obj("error" to "no route: $method $path"))
         }
     }
@@ -386,6 +394,66 @@ class ControlApiServer(
             "messages" to snapshot.messages.size,
             "tags" to snapshot.tags.size,
         ))
+    }
+
+    // ── Scripting (JSR-223 operator hook) ───────────────────────────────────
+    private fun scriptStatus(ex: HttpExchange) {
+        val h = scriptHooks
+        if (h == null) { send(ex, 200, Json.obj("available" to false)); return }
+        send(ex, 200, Json.obj(
+            "available" to h.engineAvailable,
+            "installed" to (h.source != null),
+            "source" to h.source,
+            "last_error" to h.lastError,
+        ))
+    }
+
+    private fun setScript(ex: HttpExchange) {
+        val h = scriptHooks ?: run { send(ex, 404, Json.obj("error" to "scripting not available")); return }
+        val o = Json.asObject(Json.parse(body(ex)))
+        val source = Json.str(o, "source").ifBlank { send(ex, 400, Json.obj("error" to "source required")); return }
+        h.setScript(source) // throws IllegalArgumentException on compile error -> 400 via safeHandle
+        send(ex, 200, Json.obj("ok" to true, "installed" to true))
+    }
+
+    private fun clearScript(ex: HttpExchange) {
+        val h = scriptHooks ?: run { send(ex, 404, Json.obj("error" to "scripting not available")); return }
+        h.setScript(null)
+        send(ex, 200, Json.obj("ok" to true, "installed" to false))
+    }
+
+    // ── DNS redirector ──────────────────────────────────────────────────────
+    private fun dnsStatus(ex: HttpExchange) {
+        val d = dnsController ?: run { send(ex, 404, Json.obj("error" to "DNS not available")); return }
+        send(ex, 200, Json.obj(d.status()))
+    }
+
+    private fun dnsStart(ex: HttpExchange) {
+        val d = dnsController ?: run { send(ex, 404, Json.obj("error" to "DNS not available")); return }
+        val o = Json.asObject(Json.parse(body(ex)))
+        val host = Json.str(o, "host", "127.0.0.1")
+        val port = Json.int(o, "port", 53)
+        val defaultIp = Json.str(o, "default_ip").ifBlank { null }
+        val rules = (o["rules"] as? List<*>).orEmpty().mapNotNull { r ->
+            val m = r as? Map<*, *> ?: return@mapNotNull null
+            val hp = (m["host"] as? String)?.ifBlank { null } ?: return@mapNotNull null
+            val ip = (m["ip"] as? String)?.ifBlank { null } ?: return@mapNotNull null
+            expedition.dns.DnsRedirector.Rule(hp, ip)
+        }
+        if (rules.isEmpty() && defaultIp == null) {
+            send(ex, 400, Json.obj("error" to "at least one rule or a default_ip is required")); return
+        }
+        val bound = try { d.start(host, port, rules, defaultIp) }
+        catch (e: java.net.BindException) {
+            send(ex, 409, Json.obj("error" to "cannot bind DNS on $host:$port (port 53 needs privileges): ${e.message}")); return
+        }
+        send(ex, 200, Json.obj("ok" to true, "host" to host, "port" to bound))
+    }
+
+    private fun dnsStop(ex: HttpExchange) {
+        val d = dnsController ?: run { send(ex, 404, Json.obj("error" to "DNS not available")); return }
+        d.stop()
+        send(ex, 200, Json.obj("ok" to true, "running" to false))
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────

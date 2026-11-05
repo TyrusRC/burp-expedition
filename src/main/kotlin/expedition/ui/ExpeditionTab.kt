@@ -22,7 +22,9 @@ class ExpeditionTab(
     private val onStopListener: (String) -> Unit,
     private val onStartSocks5Listener: (Socks5ListenerConfig) -> Unit = {},
     initialCertificateProvider: BurpCertificateProvider? = null,
-    private val flowTagStore: FlowTagStore = FlowTagStore()
+    private val flowTagStore: FlowTagStore = FlowTagStore(),
+    private val scriptHooks: expedition.script.ScriptHooks? = null,
+    private val dnsController: expedition.dns.DnsController? = null,
 ) {
     private val tabbedPane = JTabbedPane()
     val component: JComponent = tabbedPane
@@ -46,6 +48,8 @@ class ExpeditionTab(
         tabbedPane.addTab("Intercept", interceptPanel.component)
         tabbedPane.addTab("History", historyPanel.component)
         tabbedPane.addTab("Match & Replace", matchReplacePanel.component)
+        if (scriptHooks != null) tabbedPane.addTab("Scripting", ScriptingPanel(scriptHooks).component)
+        if (dnsController != null) tabbedPane.addTab("DNS", DnsPanel(dnsController).component)
     }
 
     fun currentCertificateProvider(): BurpCertificateProvider? = certificateProvider
