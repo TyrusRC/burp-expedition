@@ -8,14 +8,29 @@ import expedition.registry.ProxyMessage
  * recomputed on edit; control/binary frames render a summary and round-trip through a
  * `raw: hex:` line.
  *
+ * Binary frames (opcode 2) whose payload the injected [payloadDissector] recognises are
+ * decoded nested — e.g. protobuf/gRPC messages tunnelled over WebSocket, the common case
+ * for mobile and SPA back-ends — and edits are re-encoded and re-framed (masking re-applied,
+ * length recomputed). A payload the inner dissector doesn't recognise falls back to raw hex.
+ *
  * NOTE: one frame consuming the whole buffer; fragmented frames across chunks are shown as
  * raw hex. Text payloads containing a leading space or newline may not round-trip exactly.
  */
-class WebSocketDissector : Dissector {
+class WebSocketDissector(
+    private val payloadDissector: Dissector = ProtobufDissector(),
+) : Dissector {
 
     private val opNames = mapOf(
         0 to "continuation", 1 to "text", 2 to "binary", 8 to "close", 9 to "ping", 10 to "pong"
     )
+
+    /** Label for the nested decoder, e.g. "protobuf" — used as the render marker `WS binary (protobuf):`. */
+    private val payloadLabel: String =
+        (payloadDissector::class.simpleName ?: "payload").removeSuffix("Dissector").lowercase()
+    private val binaryHeader = "WS binary ("
+
+    private fun innerMessage(original: ProxyMessage, payload: ByteArray) =
+        original.copy(rawBytes = payload)
 
     private class Frame(
         val byte0: Int, val opcode: Int, val masked: Boolean,
@@ -30,6 +45,12 @@ class WebSocketDissector : Dissector {
     override fun render(message: ProxyMessage): String {
         val f = parse(message.rawBytes) ?: return HexStringDissector().render(message)
         if (f.opcode == 1) return "WS text: ${String(f.payload, Charsets.UTF_8)}"
+        // Binary frame: try to decode the payload with the inner dissector (protobuf by default).
+        if (f.opcode == 2 && f.payload.isNotEmpty()) {
+            val inner = innerMessage(message, f.payload)
+            if (payloadDissector.supports(inner))
+                return "$binaryHeader$payloadLabel):\n${payloadDissector.render(inner)}"
+        }
         val name = opNames[f.opcode] ?: "op${f.opcode}"
         return "WS $name len=${f.payload.size}\nraw: hex:${message.rawBytes.toHex()}"
     }
@@ -38,32 +59,43 @@ class WebSocketDissector : Dissector {
         if (edited.startsWith("WS text:")) {
             val f = parse(original.rawBytes) ?: return original.rawBytes
             val payload = edited.substringAfter("WS text:").removePrefix(" ").toByteArray(Charsets.UTF_8)
-            val out = ArrayList<Byte>()
-            out.add(f.byte0.toByte())
-            val maskBit = if (f.masked) 0x80 else 0
-            when {
-                payload.size < 126 -> out.add((maskBit or payload.size).toByte())
-                payload.size < 65536 -> {
-                    out.add((maskBit or 126).toByte())
-                    out.add((payload.size ushr 8).toByte()); out.add(payload.size.toByte())
-                }
-                else -> {
-                    out.add((maskBit or 127).toByte())
-                    for (s in 56 downTo 0 step 8) out.add((payload.size.toLong() ushr s).toByte())
-                }
-            }
-            if (f.masked && f.maskKey != null) {
-                out.addAll(f.maskKey.toList())
-                payload.forEachIndexed { i, b -> out.add((b.toInt() xor f.maskKey[i % 4].toInt()).toByte()) }
-            } else {
-                out.addAll(payload.toList())
-            }
-            return out.toByteArray()
+            return frame(f, payload)
+        }
+        if (edited.startsWith(binaryHeader)) {
+            val f = parse(original.rawBytes) ?: return original.rawBytes
+            val innerText = edited.substringAfter("\n", "")
+            val payload = payloadDissector.parseEdit(innerText, innerMessage(original, f.payload))
+            return frame(f, payload)
         }
         val rawLine = edited.split("\n").map { it.trim() }
             .firstOrNull { it.startsWith("raw: hex:") || it.startsWith("hex:") }
             ?: return original.rawBytes
         return hexToBytes(rawLine.substringAfter("hex:"))
+    }
+
+    /** Re-frame [payload] under the original frame's opcode/FIN and masking, recomputing the length field. */
+    private fun frame(f: Frame, payload: ByteArray): ByteArray {
+        val out = ArrayList<Byte>()
+        out.add(f.byte0.toByte())
+        val maskBit = if (f.masked) 0x80 else 0
+        when {
+            payload.size < 126 -> out.add((maskBit or payload.size).toByte())
+            payload.size < 65536 -> {
+                out.add((maskBit or 126).toByte())
+                out.add((payload.size ushr 8).toByte()); out.add(payload.size.toByte())
+            }
+            else -> {
+                out.add((maskBit or 127).toByte())
+                for (s in 56 downTo 0 step 8) out.add((payload.size.toLong() ushr s).toByte())
+            }
+        }
+        if (f.masked && f.maskKey != null) {
+            out.addAll(f.maskKey.toList())
+            payload.forEachIndexed { i, b -> out.add((b.toInt() xor f.maskKey[i % 4].toInt()).toByte()) }
+        } else {
+            out.addAll(payload.toList())
+        }
+        return out.toByteArray()
     }
 
     private fun parse(bytes: ByteArray): Frame? {

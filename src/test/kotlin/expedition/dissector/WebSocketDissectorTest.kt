@@ -59,4 +59,44 @@ class WebSocketDissectorTest {
         // opcode 5 is reserved/invalid
         assertFalse(d.supports(wsMsg(byteArrayOf(0x85.toByte(), 0x00))))
     }
+
+    // Protobuf payload: field 1 varint 5 (08 05), field 2 len str:"hi" (12 02 68 69)
+    private val pbPayload = byteArrayOf(0x08, 0x05, 0x12, 0x02, 0x68, 0x69)
+    // Unmasked binary frame (FIN+binary 0x82, len6 0x06) carrying that protobuf payload
+    private val pbBinaryFrame = byteArrayOf(0x82.toByte(), 0x06) + pbPayload
+
+    @Test
+    fun `decodes a protobuf payload inside a binary frame`() {
+        val out = d.render(wsMsg(pbBinaryFrame))
+        assertTrue(out.contains("protobuf"), out)
+        assertTrue(out.contains("1 varint 5"), out)
+        assertTrue(out.contains("2 len str:hi"), out)
+    }
+
+    @Test
+    fun `round-trips a decoded binary protobuf frame`() {
+        assertArrayEquals(pbBinaryFrame, d.parseEdit(d.render(wsMsg(pbBinaryFrame)), wsMsg(pbBinaryFrame)))
+    }
+
+    @Test
+    fun `editing an inner protobuf field re-encodes and re-frames`() {
+        val edited = d.render(wsMsg(pbBinaryFrame)).replace("1 varint 5", "1 varint 9")
+        val out = d.parseEdit(edited, wsMsg(pbBinaryFrame))
+        assertArrayEquals(byteArrayOf(0x82.toByte(), 0x06, 0x08, 0x09, 0x12, 0x02, 0x68, 0x69), out)
+    }
+
+    @Test
+    fun `re-masks a decoded binary protobuf frame on edit`() {
+        val masked = byteArrayOf(0x82.toByte(), (0x80 or 6).toByte()) + key +
+            pbPayload.mapIndexed { i, b -> (b.toInt() xor key[i % 4].toInt()).toByte() }.toByteArray()
+        assertArrayEquals(masked, d.parseEdit(d.render(wsMsg(masked)), wsMsg(masked)))
+    }
+
+    @Test
+    fun `a non-protobuf binary frame still falls back to raw hex`() {
+        val f = byteArrayOf(0x82.toByte(), 0x01, 0x00) // payload 0x00 — invalid protobuf (field 0)
+        val out = d.render(wsMsg(f))
+        assertTrue(out.contains("raw: hex:"), out)
+        assertArrayEquals(f, d.parseEdit(out, wsMsg(f)))
+    }
 }
