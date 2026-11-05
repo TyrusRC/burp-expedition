@@ -35,6 +35,21 @@ class ConnectionRegistryTest {
         assertNotNull(registry.connection(id)!!.closedAt)
     }
 
+    // A long-running MITM must not grow history without bound (full rawBytes per message
+    // would OOM Burp). The registry keeps at most maxMessages, evicting the oldest.
+    @Test
+    fun `history is bounded and evicts the oldest messages`() {
+        val registry = ConnectionRegistry(maxMessages = 3)
+        val c = registry.openConnection("l", Protocol.TCP, "c", "u")
+
+        repeat(5) { registry.recordMessage(c, Direction.CLIENT_TO_UPSTREAM, byteArrayOf(it.toByte())) }
+
+        val all = registry.allMessages()
+        assertEquals(3, all.size)
+        assertArrayEquals(byteArrayOf(2), all.first().rawBytes, "oldest (0,1) should be evicted")
+        assertArrayEquals(byteArrayOf(4), all.last().rawBytes)
+    }
+
     @Test
     fun `allMessages spans multiple connections in recording order`() {
         val registry = ConnectionRegistry()
