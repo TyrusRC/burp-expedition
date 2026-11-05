@@ -49,6 +49,11 @@ class DefaultDissectorsTest {
         routesTo<RedisDissector>("+PONG\r\n".toByteArray())
     }
 
+    @Test fun `a gRPC length-prefixed protobuf message routes to the gRPC dissector`() {
+        val pb = byteArrayOf(0x08, 0x05, 0x12, 0x02, 0x68, 0x69) // protobuf
+        routesTo<GrpcDissector>(byteArrayOf(0x00, 0x00, 0x00, 0x00, pb.size.toByte()) + pb)
+    }
+
     @Test fun `a TLS ClientHello still routes to the TLS dissector`() {
         // minimal ClientHello record (handshake, TLS1.0 record, ClientHello, TLS1.2 body)
         val body = byteArrayOf(0x03, 0x03) + ByteArray(32) + byteArrayOf(0x00) + u16(2) + u16(0x1301) +

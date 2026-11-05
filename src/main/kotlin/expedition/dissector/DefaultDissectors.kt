@@ -20,6 +20,7 @@ fun defaultDissectors(): DissectorRegistry = DissectorRegistry().apply {
     // ── Last-resort heuristics (lowest priority) ──────────────────────────────
     register(KafkaDissector())          // no magic bytes
     register(ProtobufDissector())       // byte heuristic
+    register(GrpcDissector())           // length-prefixed protobuf framing; outranks bare protobuf
     register(QuicDissector())           // short-header ≈ any byte with the fixed bit
     register(MqttDissector())           // 1-byte fixed header collides with 0x30/text
     register(LineProtocolDissector())   // any text line
