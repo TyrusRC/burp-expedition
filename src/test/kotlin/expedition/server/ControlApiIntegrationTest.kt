@@ -91,6 +91,67 @@ class ControlApiIntegrationTest {
         }
     }
 
+    /** Send a raw GET /status with extra headers; return the HTTP status line. */
+    private fun rawStatusLine(vararg headers: String): String =
+        java.net.Socket("127.0.0.1", port).use { s ->
+            val req = StringBuilder("GET /status HTTP/1.1\r\nHost: 127.0.0.1\r\n")
+            headers.forEach { req.append(it).append("\r\n") }
+            req.append("Connection: close\r\n\r\n")
+            s.getOutputStream().write(req.toString().toByteArray()); s.getOutputStream().flush()
+            s.getInputStream().bufferedReader().readLine()
+        }
+
+    // CSRF / DNS-rebinding defense: a browser fetch from a malicious page always carries
+    // an Origin header; a legitimate CLI/MCP client carries none. Any cross-site Origin
+    // must be rejected even though the Host is loopback (a no-cors POST is otherwise a
+    // simple request the browser lets through).
+    @Test
+    fun `a cross-site Origin header is rejected`() {
+        assertTrue(rawStatusLine("Origin: http://evil.com").contains("403"))
+    }
+
+    @Test
+    fun `a request with no Origin header is allowed`() {
+        assertTrue(rawStatusLine().contains("200"))
+    }
+
+    @Test
+    fun `a loopback Origin header is allowed`() {
+        assertTrue(rawStatusLine("Origin: http://127.0.0.1:$port").contains("200"))
+    }
+
+    @Test
+    fun `when an auth token is set, only requests carrying it are served`() {
+        val p = ServerSocket(0).use { it.localPort }
+        val secured = ControlApiServer(
+            host = "127.0.0.1", port = p,
+            registry = ConnectionRegistry(), matchReplace = MatchReplaceEngine(), intercept = InterceptController(),
+            startListener = {}, stopListener = {}, runningListeners = { emptySet() },
+            authToken = "s3cret",
+        )
+        secured.start()
+        try {
+            fun status(auth: String?): Int {
+                val b = HttpRequest.newBuilder(URI.create("http://127.0.0.1:$p/status"))
+                if (auth != null) b.header("Authorization", auth)
+                return http.send(b.build(), HttpResponse.BodyHandlers.ofString()).statusCode()
+            }
+            assertEquals(401, status(null), "no token must be rejected")
+            assertEquals(401, status("Bearer wrong"), "wrong token must be rejected")
+            assertEquals(200, status("Bearer s3cret"), "correct token must be served")
+        } finally {
+            secured.stop()
+        }
+    }
+
+    @Test
+    fun `an oversized request body is rejected`() {
+        val big = "x".repeat(5 * 1024 * 1024) // 5 MiB, over the cap
+        val r = post("/matchreplace", """{"match_type":"LITERAL_STRING","match":"$big","replace":"y"}""")
+        assertEquals(400, r.statusCode(), "oversized body should be rejected, not buffered whole")
+        assertEquals(0, matchReplace.rules().size)
+    }
+
     @Test
     fun `bad listener config returns 400`() {
         val r = post("/listeners", """{"protocol":"tcp"}""")   // missing name/upstream

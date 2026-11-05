@@ -30,6 +30,15 @@ class JsonTest {
         assertTrue(o["a"] is Map<*, *>)
         assertEquals("line\nbreak", o["s"])
     }
+
+    // Deeply nested input must be rejected with a catchable IllegalArgumentException, not a
+    // StackOverflowError — the latter is an Error, slips past safeHandle's `catch (Exception)`,
+    // and kills the HttpServer worker thread. A browser can reach this via a no-cors POST.
+    @Test
+    fun `deeply nested json is rejected instead of overflowing the stack`() {
+        val deep = "[".repeat(5000) + "]".repeat(5000)
+        org.junit.jupiter.api.assertThrows<IllegalArgumentException> { Json.parse(deep) }
+    }
 }
 
 class ControlApiHelpersTest {

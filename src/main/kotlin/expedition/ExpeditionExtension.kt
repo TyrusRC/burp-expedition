@@ -81,6 +81,9 @@ class ExpeditionExtension : BurpExtension {
             // Windows IP) — set it to the reachable bind IP, not 0.0.0.0.
             val bindHost = System.getenv("EXPEDITION_API_HOST")?.takeIf { it.isNotBlank() } ?: "127.0.0.1"
             val port = System.getenv("EXPEDITION_API_PORT")?.toIntOrNull() ?: 18112
+            // Optional shared secret: when set, every request must send
+            // `Authorization: Bearer <token>`. Strongly recommended for a non-loopback bind.
+            val apiToken = System.getenv("EXPEDITION_API_TOKEN")?.takeIf { it.isNotBlank() }
             ControlApiServer(
                 host = bindHost, port = port,
                 registry = registry, matchReplace = matchReplaceEngine,
@@ -90,13 +93,17 @@ class ExpeditionExtension : BurpExtension {
                 runningListeners = { engine.runningListenerNames() },
                 startSocks5Listener = { engine.startSocks5ListenerChecked(it) },
                 flowTagStore = flowTagStore,
+                authToken = apiToken,
             ).also {
                 it.start()
-                api.logging().logToOutput("Expedition control API on $bindHost:$port")
+                api.logging().logToOutput(
+                    "Expedition control API on $bindHost:$port" +
+                    if (apiToken != null) " (auth token required)" else "")
                 if (it.isExposedBeyondLoopback()) api.logging().logToError(
                     "WARNING: Expedition control API is bound to a NON-loopback host " +
-                    "($bindHost) — it can start proxies and send arbitrary bytes. " +
-                    "Ensure the interface is trusted / firewalled; prefer loopback + " +
+                    "($bindHost) — it can start proxies and send arbitrary bytes." +
+                    (if (apiToken == null) " NO auth token is set — set EXPEDITION_API_TOKEN." else "") +
+                    " Ensure the interface is trusted / firewalled; prefer loopback + " +
                     "WSL mirrored networking where possible.")
             }
         }.onFailure { api.logging().logToError("Expedition control API failed to start: ${it.message}") }.getOrNull()

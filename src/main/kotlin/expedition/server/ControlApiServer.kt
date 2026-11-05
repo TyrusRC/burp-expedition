@@ -46,6 +46,12 @@ class ControlApiServer(
     private val replaySender: ReplaySender = ReplaySender(),
     private val flowTagStore: FlowTagStore = FlowTagStore(),
     private val version: String = "0.1.0",
+    /**
+     * When set, every request must carry `Authorization: Bearer <authToken>`. Null (the
+     * default) leaves the API open — acceptable on loopback, but a token SHOULD be set
+     * whenever the API is bound beyond loopback (see [isExposedBeyondLoopback]).
+     */
+    private val authToken: String? = null,
 ) {
     private var server: HttpServer? = null
     private val ruleIds = AtomicLong(1)
@@ -72,6 +78,8 @@ class ControlApiServer(
     private fun safeHandle(ex: HttpExchange) {
         try {
             if (!hostAllowed(ex)) { send(ex, 403, Json.obj("error" to "non-loopback Host rejected")); return }
+            if (!originAllowed(ex)) { send(ex, 403, Json.obj("error" to "cross-site Origin rejected")); return }
+            if (!authorized(ex)) { send(ex, 401, Json.obj("error" to "missing or invalid auth token")); return }
             route(ex)
         } catch (e: IllegalArgumentException) {
             send(ex, 400, Json.obj("error" to (e.message ?: "bad request")))
@@ -368,8 +376,25 @@ class ControlApiServer(
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────
-    private fun body(ex: HttpExchange): String =
-        ex.requestBody.readBytes().toString(StandardCharsets.UTF_8)
+    private fun body(ex: HttpExchange): String {
+        // Buffer at most MAX_BODY_BYTES, but keep draining (discarding) the rest of an
+        // over-cap body: com.sun HttpServer resets the connection if we respond without
+        // consuming the request, which would deny the client the clean 400. Memory stays
+        // bounded to one buffer + the cap; IllegalArgumentException maps to 400 upstream.
+        val stream = ex.requestBody
+        val kept = java.io.ByteArrayOutputStream()
+        val buf = ByteArray(8192)
+        var total = 0L
+        var over = false
+        while (true) {
+            val n = stream.read(buf)
+            if (n < 0) break
+            total += n
+            if (total > MAX_BODY_BYTES) over = true else kept.write(buf, 0, n)
+        }
+        require(!over) { "request body too large (> $MAX_BODY_BYTES bytes)" }
+        return kept.toString(StandardCharsets.UTF_8)
+    }
 
     private fun queryInt(ex: HttpExchange, key: String, default: Int): Int =
         ex.requestURI.query?.split("&")?.firstOrNull { it.startsWith("$key=") }
@@ -387,6 +412,36 @@ class ControlApiServer(
         return isLoopback(name) || name.equals(host, ignoreCase = true)
     }
 
+    /**
+     * CSRF / DNS-rebinding defense. A browser attaches an Origin header to cross-site
+     * requests (including no-cors "simple" POSTs that would otherwise slip through); a
+     * legitimate CLI/MCP client sends none. Reject any Origin whose host is not loopback
+     * or the configured bind host; a missing Origin is allowed (non-browser client).
+     */
+    /** No token configured → open. Otherwise require an exact `Bearer <token>` match,
+     *  compared in constant time so a wrong token can't be recovered by timing. */
+    private fun authorized(ex: HttpExchange): Boolean {
+        val expected = authToken ?: return true
+        val header = ex.requestHeaders.getFirst("Authorization") ?: return false
+        val presented = header.removePrefix("Bearer ").trim()
+        return java.security.MessageDigest.isEqual(
+            presented.toByteArray(StandardCharsets.UTF_8),
+            expected.toByteArray(StandardCharsets.UTF_8),
+        )
+    }
+
+    private fun originAllowed(ex: HttpExchange): Boolean {
+        val origin = ex.requestHeaders.getFirst("Origin") ?: return true
+        // "null" is what a sandboxed/opaque browser origin sends — never trust it.
+        if (origin.equals("null", ignoreCase = true)) return false
+        val host = try {
+            java.net.URI(origin).host ?: return false
+        } catch (e: Exception) {
+            return false
+        }
+        return isLoopback(host) || host.equals(this.host, ignoreCase = true)
+    }
+
     private fun send(ex: HttpExchange, code: Int, json: String) {
         val bytes = json.toByteArray(StandardCharsets.UTF_8)
         ex.responseHeaders.add("Content-Type", "application/json")
@@ -395,6 +450,10 @@ class ControlApiServer(
     }
 
     companion object {
+        /** Cap on a control request body (4 MiB) — generous for repeat/fuzz seeds, bounded
+         *  against a memory-exhaustion POST to the loopback API. */
+        const val MAX_BODY_BYTES = 4 * 1024 * 1024
+
         fun isLoopback(host: String?): Boolean {
             if (host.isNullOrBlank()) return false
             if (host.equals("localhost", true) || host == "::1" || host == "0:0:0:0:0:0:0:1") return true

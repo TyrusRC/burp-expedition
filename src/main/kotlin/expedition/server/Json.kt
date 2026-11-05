@@ -57,8 +57,13 @@ object Json {
         else -> default
     }
 
+    /** Max object/array nesting. Deeper input is rejected before it can overflow the
+     *  recursive-descent parser's stack (which would be an uncatchable-by-design Error). */
+    const val MAX_DEPTH = 200
+
     private class Parser(private val s: String) {
         private var i = 0
+        private var depth = 0
         fun parseValue(): Any? {
             skipWs()
             return when (val c = peek()) {
@@ -71,21 +76,24 @@ object Json {
                         else throw IllegalArgumentException("unexpected char '$c' at $i")
             }
         }
+        private fun enter() { if (++depth > MAX_DEPTH) throw IllegalArgumentException("json nested too deep (>$MAX_DEPTH)") }
         private fun parseObject(): Map<String, Any?> {
+            enter()
             val m = LinkedHashMap<String, Any?>(); expectChar('{'); skipWs()
-            if (peek() == '}') { i++; return m }
+            if (peek() == '}') { i++; depth--; return m }
             while (true) {
                 skipWs(); val k = parseString(); skipWs(); expectChar(':')
                 m[k] = parseValue(); skipWs()
-                when (next()) { ',' -> {}; '}' -> return m; else -> throw IllegalArgumentException("bad object at $i") }
+                when (next()) { ',' -> {}; '}' -> { depth--; return m }; else -> throw IllegalArgumentException("bad object at $i") }
             }
         }
         private fun parseArray(): List<Any?> {
+            enter()
             val a = ArrayList<Any?>(); expectChar('['); skipWs()
-            if (peek() == ']') { i++; return a }
+            if (peek() == ']') { i++; depth--; return a }
             while (true) {
                 a.add(parseValue()); skipWs()
-                when (next()) { ',' -> {}; ']' -> return a; else -> throw IllegalArgumentException("bad array at $i") }
+                when (next()) { ',' -> {}; ']' -> { depth--; return a }; else -> throw IllegalArgumentException("bad array at $i") }
             }
         }
         private fun parseString(): String {
