@@ -57,6 +57,21 @@ class MessageGateTest {
     }
 
     @Test
+    fun `runs the script hook on forwarded bytes after match and replace`() {
+        val registry = ConnectionRegistry()
+        val connectionId = registry.openConnection("l", Protocol.TCP, "c", "u")
+        val matchReplace = MatchReplaceEngine().apply { addRule(MatchReplaceRule(1, MatchType.LITERAL_STRING, "foo", "bar")) }
+        val hooks = expedition.script.ScriptHooks().apply { setScript("new String(bytes).toUpperCase().getBytes()") }
+        val gate = MessageGate(registry, InterceptController(), matchReplace, hooks) { _, _, _, _ -> }
+        var forwarded: ByteArray? = null
+
+        gate.process(connectionId, Direction.CLIENT_TO_UPSTREAM, "foo".toByteArray()) { forwarded = it }
+
+        // match/replace foo->bar runs first, then the script upper-cases: "BAR"
+        assertArrayEquals("BAR".toByteArray(), forwarded)
+    }
+
+    @Test
     fun `holds the message and only forwards edited bytes once the controller forwards it`() {
         val registry = ConnectionRegistry()
         val connectionId = registry.openConnection("l", Protocol.TCP, "c", "u")

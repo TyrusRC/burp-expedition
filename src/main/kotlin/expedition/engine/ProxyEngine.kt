@@ -16,9 +16,10 @@ class ProxyEngine(
     matchReplaceEngine: MatchReplaceEngine,
     private val certificateProviderSupplier: () -> BurpCertificateProvider?,
     onHeldMessage: (heldMessageId: Long, connectionId: Long, direction: Direction, bytes: ByteArray) -> Unit,
-    private val onError: (listenerName: String, message: String) -> Unit
+    private val onError: (listenerName: String, message: String) -> Unit,
+    scriptHooks: expedition.script.ScriptHooks? = null,
 ) {
-    private val messageGate = MessageGate(registry, interceptController, matchReplaceEngine, onHeldMessage)
+    private val messageGate = MessageGate(registry, interceptController, matchReplaceEngine, scriptHooks, onHeldMessage)
     private val bossGroup = NioEventLoopGroup(1)
     private val workerGroup = NioEventLoopGroup()
     private val tcpListeners = ConcurrentHashMap<String, TcpListener>()

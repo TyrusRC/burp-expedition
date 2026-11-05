@@ -24,6 +24,10 @@ dependencies {
     testImplementation(platform("org.junit:junit-bom:5.11.0"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    // A real JSR-223 engine, TEST-ONLY — proves the scripting hook runs scripts. Deliberately
+    // NOT shipped: the extension discovers whatever engine the host (Burp bundles Groovy) or the
+    // operator provides, so we don't bundle/relocate an interpreter into the BApp jar.
+    testImplementation("org.apache.groovy:groovy-jsr223:4.0.23")
 }
 
 // Target JVM 17 bytecode (Burp's minimum) but compile with whatever JDK runs Gradle

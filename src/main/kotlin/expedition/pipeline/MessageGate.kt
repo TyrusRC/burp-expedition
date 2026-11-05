@@ -10,6 +10,7 @@ class MessageGate(
     private val registry: ConnectionRegistry,
     private val interceptController: InterceptController,
     private val matchReplaceEngine: MatchReplaceEngine,
+    private val scriptHooks: expedition.script.ScriptHooks? = null,
     private val onHeldMessage: (heldMessageId: Long, connectionId: Long, direction: Direction, bytes: ByteArray) -> Unit
 ) {
     fun process(connectionId: Long, direction: Direction, bytes: ByteArray, forward: (ByteArray) -> Unit) {
@@ -21,7 +22,8 @@ class MessageGate(
                 is InterceptDecision.Drop ->
                     registry.recordMessage(connectionId, direction, ByteArray(0), "DROPPED")
                 is InterceptDecision.Forward -> {
-                    val finalBytes = matchReplaceEngine.apply(decision.bytes)
+                    val replaced = matchReplaceEngine.apply(decision.bytes)
+                    val finalBytes = scriptHooks?.transform(connectionId, direction.name, replaced) ?: replaced
                     registry.recordMessage(connectionId, direction, finalBytes)
                     forward(finalBytes)
                 }
