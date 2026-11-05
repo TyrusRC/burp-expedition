@@ -3,3 +3,4 @@ build/
 .superpowers/
 docs/
 .kotlin/
+graphify-out/
