@@ -31,7 +31,7 @@ hex/string, line/text, Redis (RESP), **Protobuf**, **HTTP/2** (gRPC frame-level)
 - **History** — connection/message log with connection replay, flow tagging, and JSON
   session save / restore / export.
 - **Fuzzer** — replay a captured payload with mutations over TCP/UDP.
-- **Control API** — a loopback JSON REST API (`:18112`) to drive listeners, history, the
+- **Control API** — an opt-in loopback JSON REST API (`:18112`) to drive listeners, history, the
   Repeater, intercept, and match-and-replace from automation (see below); exposed in
   Praetor as the `tcp_proxy_*` MCP tools.
 
@@ -85,17 +85,20 @@ the Montoya API can't read Burp's CA key, so export it once:
 
 ## Control API (loopback, for automation / Praetor MCP)
 
-The extension serves a small JSON REST API on **`127.0.0.1:18112`** so an external
+The extension can serve a small JSON REST API on **`127.0.0.1:18112`** so an external
 client — the [Praetor](https://github.com/TyrusRC/praetor) MCP server — can drive
 the proxy programmatically: manage listeners, read captured connections/messages
 as evidence, run the Repeater, and manage match-and-replace rules.
 
+- **Opt-in:** off by default — a Burp extension should not open a listening socket
+  on load unless asked. Set **`EXPEDITION_API_ENABLE=1`** to start it.
 - **Security:** loopback-only by default; every request's `Host` header is checked
   against literal loopback (or the configured bind host) — DNS-rebinding safe,
   never resolves a hostname. The API can start proxies and send arbitrary bytes,
   so it must never be exposed to an untrusted network.
-- **Env:** `EXPEDITION_API_PORT` (default `18112`); `EXPEDITION_API_DISABLE=1` to
-  turn it off; `EXPEDITION_API_HOST` to bind a non-loopback interface **only** when
+- **Env:** `EXPEDITION_API_ENABLE=1` to turn it on; `EXPEDITION_API_PORT` (default
+  `18112`); `EXPEDITION_API_DISABLE=1` as a kill switch overriding enable;
+  `EXPEDITION_API_HOST` to bind a non-loopback interface **only** when
   the client is off-host (NAT-mode WSL reaching Burp on the Windows IP) — set it to
   the reachable IP, not `0.0.0.0`; a warning is logged when bound beyond loopback.
 
