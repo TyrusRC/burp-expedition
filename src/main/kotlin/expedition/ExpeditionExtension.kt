@@ -32,6 +32,7 @@ class ExpeditionExtension : BurpExtension {
         dissectorRegistry.register(expedition.dissector.DnsDissector())
         dissectorRegistry.register(expedition.dissector.StunDissector())
         dissectorRegistry.register(expedition.dissector.QuicDissector())
+        dissectorRegistry.register(expedition.dissector.TlsDissector())
         dissectorRegistry.register(expedition.dissector.LineProtocolDissector())
         dissectorRegistry.register(expedition.dissector.RedisDissector())
         val matchReplaceEngine = MatchReplaceEngine(dissectorRegistry)

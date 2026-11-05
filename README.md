@@ -23,6 +23,7 @@ rewrite arbitrary TCP and UDP traffic from inside Burp.
 
 **Protocol dissectors** — pluggable SPI, auto-selected per message:
 hex/string, line/text, Redis (RESP), **Protobuf**, **HTTP/2** (gRPC frame-level),
+**TLS** (ClientHello/ServerHello SNI / ALPN / version / cipher suites),
 **STUN/TURN** (RFC 5389), **QUIC** (Initial/Handshake SNI extraction), **DNS**,
 **MQTT**, **PostgreSQL**, **MySQL**, **MongoDB**, **WebSocket**, **Modbus/TCP**, **DNP3**.
 
