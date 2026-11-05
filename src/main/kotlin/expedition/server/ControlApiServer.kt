@@ -54,6 +54,7 @@ class ControlApiServer(
     private val authToken: String? = null,
 ) {
     private var server: HttpServer? = null
+    private var executor: java.util.concurrent.ExecutorService? = null
     private val ruleIds = AtomicLong(1)
 
     /** True when the API is bound beyond loopback (operator's risk — remote/WSL). */
@@ -64,7 +65,12 @@ class ControlApiServer(
         // Praetor MCP server on a NAT-mode WSL reaches Burp via the host IP, not
         // 127.0.0.1) but the caller is expected to log the exposure warning.
         val s = HttpServer.create(InetSocketAddress(host, port), 0)
-        s.executor = Executors.newFixedThreadPool(2)
+        val threadId = AtomicLong(1)
+        val pool = Executors.newFixedThreadPool(2) { r ->
+            Thread(r, "expedition-ctrl-api-${threadId.getAndIncrement()}").apply { isDaemon = true }
+        }
+        s.executor = pool
+        executor = pool
         s.createContext("/") { ex -> safeHandle(ex) }
         s.start()
         server = s
@@ -73,6 +79,10 @@ class ControlApiServer(
     fun stop() {
         server?.stop(0)
         server = null
+        // HttpServer.stop() does not touch an application-supplied executor — shut it
+        // down ourselves or its worker threads leak and pin the extension classloader.
+        executor?.shutdownNow()
+        executor = null
     }
 
     private fun safeHandle(ex: HttpExchange) {
