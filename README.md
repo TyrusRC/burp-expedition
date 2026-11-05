@@ -1,8 +1,8 @@
 # Burp Expedition
 
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Kotlin](https://img.shields.io/badge/Kotlin-2.0-7F52FF.svg?logo=kotlin&logoColor=white)](build.gradle.kts)
-[![JDK 17+](https://img.shields.io/badge/JDK-17%2B-ED8B00.svg?logo=openjdk&logoColor=white)](#building)
+[![Kotlin](https://img.shields.io/badge/Kotlin-2.0-7F52FF.svg)](build.gradle.kts)
+[![JDK 17+](https://img.shields.io/badge/JDK-17%2B-ED8B00.svg)](#building)
 [![Burp Montoya API](https://img.shields.io/badge/Burp-Montoya%20API-FF6633.svg)](https://portswigger.net/burp/documentation/desktop/extensions)
 
 > A Burp Suite extension that adds a full **TCP/UDP relay** — TLS MITM, intercept-and-edit,
@@ -147,7 +147,7 @@ to replace the message, or `null` to leave it unchanged.
   (Burp ships Groovy) and is a safe no-op when none is present.
 - **Fail-safe:** a compile error is rejected when you apply the script; a runtime error forwards the
   original bytes unchanged and is surfaced, never dropping or corrupting traffic.
-- **⚠️ Full JVM privileges, no sandbox** — by design, the same trust level as any Burp extension.
+- **Full JVM privileges, no sandbox** — by design, the same trust level as any Burp extension.
   Only an operator who already controls the Burp process can set a script (local UI / loopback API).
   Never wire script-setting to untrusted input.
 
