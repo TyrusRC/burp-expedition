@@ -4,7 +4,6 @@ import burp.api.montoya.BurpExtension
 import burp.api.montoya.MontoyaApi
 import burp.api.montoya.extension.ExtensionUnloadingHandler
 import expedition.engine.ProxyEngine
-import expedition.dissector.DissectorRegistry
 import expedition.intercept.InterceptController
 import expedition.matchreplace.MatchReplaceEngine
 import expedition.registry.ConnectionRegistry
@@ -16,25 +15,9 @@ class ExpeditionExtension : BurpExtension {
     override fun initialize(api: MontoyaApi) {
         api.extension().setName("Burp Expedition v0.1.0")
         val registry = ConnectionRegistry()
-        val dissectorRegistry = DissectorRegistry()
-        // register() inserts at index 0 (last wins), so register lowest-priority first.
-        // Protobuf's heuristic is eager and matches only non-text binary, so it sits
-        // below Redis and the text dissector: Redis -> text -> Protobuf -> hex default.
-        dissectorRegistry.register(expedition.dissector.ProtobufDissector())
-        dissectorRegistry.register(expedition.dissector.Http2FrameDissector())
-        dissectorRegistry.register(expedition.dissector.PostgresDissector())
-        dissectorRegistry.register(expedition.dissector.MysqlDissector())
-        dissectorRegistry.register(expedition.dissector.MongoDissector())
-        dissectorRegistry.register(expedition.dissector.WebSocketDissector())
-        dissectorRegistry.register(expedition.dissector.ModbusDissector())
-        dissectorRegistry.register(expedition.dissector.Dnp3Dissector())
-        dissectorRegistry.register(expedition.dissector.MqttDissector())
-        dissectorRegistry.register(expedition.dissector.DnsDissector())
-        dissectorRegistry.register(expedition.dissector.StunDissector())
-        dissectorRegistry.register(expedition.dissector.QuicDissector())
-        dissectorRegistry.register(expedition.dissector.TlsDissector())
-        dissectorRegistry.register(expedition.dissector.LineProtocolDissector())
-        dissectorRegistry.register(expedition.dissector.RedisDissector())
+        // Single source of truth for the dissector line-up and its priority order,
+        // kept testable in expedition.dissector.defaultDissectors (DefaultDissectorsTest).
+        val dissectorRegistry = expedition.dissector.defaultDissectors()
         val matchReplaceEngine = MatchReplaceEngine(dissectorRegistry)
         val interceptController = InterceptController()
         val flowTagStore = expedition.session.FlowTagStore()
