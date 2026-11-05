@@ -2,7 +2,9 @@ package expedition.matchreplace
 
 import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTimeoutPreemptively
 import org.junit.jupiter.api.Test
+import java.time.Duration
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
@@ -33,6 +35,23 @@ class MatchReplaceEngineTest {
             applier.join()
         }
         assertNull(error.get(), "apply() threw under concurrent rule modification: ${error.get()}")
+    }
+
+    // A regex applied to raw, attacker-influenced bytes is a catastrophic-backtracking
+    // (ReDoS) risk. The engine must bound the work and fail SAFE (leave the bytes
+    // unchanged) rather than hang a Netty worker thread forever and stall the connection.
+    @Test
+    fun `a catastrophic-backtracking regex does not hang the engine`() {
+        val engine = MatchReplaceEngine()
+        // (.*a){n}x against a string with no 'x' backtracks exponentially on the JDK engine
+        // (unlike (a+)+ which JDK 21 optimises). ~7.6s at 28 chars; worse as the input grows.
+        engine.addRule(MatchReplaceRule(1, MatchType.REGEX, "(.*a){25}x", "X"))
+        val evil = "a".repeat(30).toByteArray()
+        var result: ByteArray? = null
+        assertTimeoutPreemptively(Duration.ofSeconds(3)) {
+            result = engine.apply(evil)
+        }
+        assertArrayEquals(evil, result, "a ReDoS-guarded rule must leave the input unchanged, not corrupt it")
     }
 
     @Test

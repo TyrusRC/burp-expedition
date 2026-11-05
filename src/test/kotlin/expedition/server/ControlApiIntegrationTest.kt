@@ -71,6 +71,14 @@ class ControlApiIntegrationTest {
     }
 
     @Test
+    fun `an invalid regex match-replace rule is rejected with 400 and not registered`() {
+        val r = post("/matchreplace", """{"match_type":"REGEX","match":"(unclosed","replace":"x"}""")
+        assertEquals(400, r.statusCode(), r.body())
+        assertTrue(r.body().contains("error"), r.body())
+        assertEquals(0, matchReplace.rules().size, "a rule that can't compile must never enter the engine")
+    }
+
+    @Test
     fun `non-loopback Host header is rejected`() {
         // java.net.http forbids overriding Host, so send a raw request.
         java.net.Socket("127.0.0.1", port).use { s ->
