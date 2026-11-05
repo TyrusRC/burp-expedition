@@ -109,6 +109,14 @@ as evidence, run the Repeater, and manage match-and-replace rules.
 | `GET /matchreplace` · `POST /matchreplace` · `DELETE /matchreplace/{id}` | list / add / remove rules |
 | `GET /intercept` · `POST /intercept/enable` | held-message queue + toggle live intercept |
 | `POST /intercept/{id}/forward` · `POST /intercept/{id}/drop` | forward (edited or unchanged) / drop a held message |
+| `POST /connections/{id}/tag` · `GET /connections/{id}/tags` | add a flow tag (`color`/`comment`) / read a connection's tags |
+| `GET /messages/search?q=…&limit=N` | messages whose ASCII preview contains `q` |
+| `POST /session/save` · `POST /session/load` · `GET /session/export` | save snapshot to a path / load tags from a path / return the snapshot JSON |
+
+Every request is checked for a loopback `Host` and rejected if it carries a cross-site
+`Origin` (CSRF / DNS-rebinding defense). Set `EXPEDITION_API_TOKEN` to require an
+`Authorization: Bearer <token>` on every request — do this whenever the API is bound
+beyond loopback. Request bodies are capped at 4 MiB.
 
 Example:
 

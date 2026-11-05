@@ -103,6 +103,8 @@ class ControlApiServer(
             method == "GET" && path == "/connections" -> connections(ex)
             method == "GET" && path.matches(Regex("/connections/\\d+/messages")) ->
                 messages(ex, path.split("/")[2].toLong())
+            method == "GET" && path.matches(Regex("/connections/\\d+/tags")) ->
+                getConnectionTags(ex, path.split("/")[2].toLong())
             method == "GET" && path == "/messages" -> allMessages(ex)
             method == "POST" && path == "/repeat" -> repeat(ex)
             method == "POST" && path == "/fuzz" -> fuzz(ex)
@@ -122,6 +124,7 @@ class ControlApiServer(
             method == "POST" && path.matches(Regex("/connections/\\d+/tag")) ->
                 tagConnection(ex, path.split("/")[2].toLong())
             method == "GET" && path == "/messages/search" -> searchMessages(ex)
+            method == "GET" && path == "/session/export" -> exportSession(ex)
             method == "POST" && path == "/session/save" -> sessionSave(ex)
             method == "POST" && path == "/session/load" -> sessionLoad(ex)
             else -> send(ex, 404, Json.obj("error" to "no route: $method $path"))

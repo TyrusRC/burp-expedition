@@ -145,6 +145,28 @@ class ControlApiIntegrationTest {
     }
 
     @Test
+    fun `GET connection tags returns the tags set on a connection`() {
+        val cid = registry.openConnection("l", Protocol.TCP, "c", "u")
+        assertEquals(200, post("/connections/$cid/tag", """{"color":"red","comment":"interesting"}""").statusCode())
+
+        val r = get("/connections/$cid/tags")
+        assertEquals(200, r.statusCode(), r.body())
+        assertTrue(r.body().contains("red"), r.body())
+        assertTrue(r.body().contains("interesting"), r.body())
+    }
+
+    @Test
+    fun `GET session export returns the full snapshot as json`() {
+        val cid = registry.openConnection("l", Protocol.TCP, "c", "u")
+        registry.recordMessage(cid, Direction.CLIENT_TO_UPSTREAM, "hi".toByteArray())
+
+        val r = get("/session/export")
+        assertEquals(200, r.statusCode(), r.body())
+        assertTrue(r.body().contains("\"connections\""), r.body())
+        assertTrue(r.body().contains("\"messages\""), r.body())
+    }
+
+    @Test
     fun `an oversized request body is rejected`() {
         val big = "x".repeat(5 * 1024 * 1024) // 5 MiB, over the cap
         val r = post("/matchreplace", """{"match_type":"LITERAL_STRING","match":"$big","replace":"y"}""")
