@@ -32,6 +32,16 @@ class DnsPanel(private val controller: DnsController) {
         }
     }
 
+    /** Fills the form from restored settings (does not start the resolver). */
+    fun populate(rules: List<DnsRedirector.Rule>, defaultIp: String?, port: Int) {
+        val fill = {
+            rulesArea.text = rules.joinToString("\n") { "${it.hostPattern} ${it.ip}" }
+            defaultIpField.text = defaultIp ?: ""
+            portField.text = port.toString()
+        }
+        if (SwingUtilities.isEventDispatchThread()) fill() else SwingUtilities.invokeLater(fill)
+    }
+
     private fun start() {
         val rules = DnsRulesParser.parse(rulesArea.text)
         val defaultIp = defaultIpField.text.ifBlank { null }
@@ -41,8 +51,8 @@ class DnsPanel(private val controller: DnsController) {
         }
         val port = portField.text.trim().toIntOrNull() ?: 53
         try {
-            // Bind all interfaces so the target host can reach the resolver, not just loopback.
-            val bound = controller.start("0.0.0.0", port, rules, defaultIp)
+            // Loopback by default: an open spoofing resolver on 0.0.0.0 is a network-wide hazard.
+            val bound = controller.start("127.0.0.1", port, rules, defaultIp)
             status.text = "Running on port $bound."
         } catch (e: Exception) {
             JOptionPane.showMessageDialog(component,

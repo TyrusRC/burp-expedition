@@ -27,6 +27,7 @@ class ControlApiScriptDnsTest {
         port = ServerSocket(0).use { it.localPort }
         dns = DnsController()
         server = ControlApiServer(
+            authToken = TEST_TOKEN,
             host = "127.0.0.1", port = port,
             registry = ConnectionRegistry(), matchReplace = MatchReplaceEngine(),
             intercept = InterceptController(),
@@ -39,14 +40,14 @@ class ControlApiScriptDnsTest {
     @AfterEach fun tearDown() { dns.stop(); server.stop() }
 
     private fun get(path: String) = http.send(
-        HttpRequest.newBuilder(URI.create("http://127.0.0.1:$port$path")).build(),
+        authed(URI.create("http://127.0.0.1:$port$path")).build(),
         HttpResponse.BodyHandlers.ofString())
     private fun post(path: String, body: String) = http.send(
-        HttpRequest.newBuilder(URI.create("http://127.0.0.1:$port$path"))
+        authed(URI.create("http://127.0.0.1:$port$path"))
             .POST(HttpRequest.BodyPublishers.ofString(body)).build(),
         HttpResponse.BodyHandlers.ofString())
     private fun delete(path: String) = http.send(
-        HttpRequest.newBuilder(URI.create("http://127.0.0.1:$port$path")).DELETE().build(),
+        authed(URI.create("http://127.0.0.1:$port$path")).DELETE().build(),
         HttpResponse.BodyHandlers.ofString())
 
     @Test fun `script can be set, read back, and cleared`() {

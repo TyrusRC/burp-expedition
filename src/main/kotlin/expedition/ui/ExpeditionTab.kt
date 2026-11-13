@@ -25,6 +25,7 @@ class ExpeditionTab(
     private val flowTagStore: FlowTagStore = FlowTagStore(),
     private val scriptHooks: expedition.script.ScriptHooks? = null,
     private val dnsController: expedition.dns.DnsController? = null,
+    private val rulesEngine: expedition.rules.RulesEngine? = null,
 ) {
     private val tabbedPane = JTabbedPane()
     val component: JComponent = tabbedPane
@@ -37,8 +38,17 @@ class ExpeditionTab(
     private val historyPanel = HistoryPanel(registry, dissectorRegistry, flowTagStore)
     private val matchReplacePanel = MatchReplacePanel(matchReplaceEngine)
 
+    private lateinit var listenersPanel: ListenersPanel
+    private var dnsPanel: DnsPanel? = null
+
+    /** Adds restored listener rows in the stopped state (call on the EDT). */
+    fun addRestoredListener(config: ListenerConfig) = listenersPanel.addRestored(config)
+    fun addRestoredSocks5Listener(config: Socks5ListenerConfig) = listenersPanel.addRestoredSocks5(config)
+    fun populateDns(rules: List<expedition.dns.DnsRedirector.Rule>, defaultIp: String?, port: Int) =
+        dnsPanel?.populate(rules, defaultIp, port)
+
     init {
-        val listenersPanel = ListenersPanel(
+        listenersPanel = ListenersPanel(
             onStartListener, onStopListener,
             onConfigureCertificateProvider = { provider -> certificateProvider = provider },
             onStartSocks5Listener = onStartSocks5Listener,
@@ -48,8 +58,14 @@ class ExpeditionTab(
         tabbedPane.addTab("Intercept", interceptPanel.component)
         tabbedPane.addTab("History", historyPanel.component)
         tabbedPane.addTab("Match & Replace", matchReplacePanel.component)
+        if (rulesEngine != null) tabbedPane.addTab("Rules", expedition.rules.RulesPanel(rulesEngine, registry).component)
+        tabbedPane.addTab("Setup", SetupPanel().component)
+        tabbedPane.addTab("Analysis", expedition.analysis.AnalysisPanel(registry).component)
         if (scriptHooks != null) tabbedPane.addTab("Scripting", ScriptingPanel(scriptHooks).component)
-        if (dnsController != null) tabbedPane.addTab("DNS", DnsPanel(dnsController).component)
+        if (dnsController != null) {
+            dnsPanel = DnsPanel(dnsController)
+            tabbedPane.addTab("DNS", dnsPanel!!.component)
+        }
     }
 
     fun currentCertificateProvider(): BurpCertificateProvider? = certificateProvider

@@ -1,0 +1,12 @@
+import requests
+
+url = "https://api.example.com/v1/items?x=1&y=a%20b"
+headers = {
+    "Content-Type": "application/json",
+    "X-Token": "a\"b$c\\d",
+    "Accept": "text/html, */*",
+}
+payload = "{\"name\":\"it's $x\",\"t\":\"é\"}\n".encode("utf-8")
+
+response = requests.request("POST", url, headers=headers, data=payload)
+print(response.text)

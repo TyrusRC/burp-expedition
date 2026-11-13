@@ -1,0 +1,20 @@
+using System;
+using System.Net.Http;
+using System.Threading.Tasks;
+
+class Program
+{
+    static async Task Main()
+    {
+        using var client = new HttpClient();
+        var request = new HttpRequestMessage(new HttpMethod("POST"), "https://api.example.com/v1/items?x=1&y=a%20b");
+        request.Headers.TryAddWithoutValidation("X-Token", "a\"b$c\\d");
+        request.Headers.TryAddWithoutValidation("Accept", "text/html");
+        request.Headers.TryAddWithoutValidation("Accept", "*/*");
+        request.Content = new StringContent("{\"name\":\"it's $x\",\"t\":\"é\"}\n");
+        request.Content.Headers.Clear();
+        request.Content.Headers.TryAddWithoutValidation("Content-Type", "application/json");
+        var response = await client.SendAsync(request);
+        Console.WriteLine(await response.Content.ReadAsStringAsync());
+    }
+}

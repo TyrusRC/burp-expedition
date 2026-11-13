@@ -1,0 +1,10 @@
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let client = reqwest::Client::new();
+    let response = client
+        .request(reqwest::Method::GET, "http://localhost:8080/ping")
+        .send()
+        .await?;
+    println!("{}", response.text().await?);
+    Ok(())
+}

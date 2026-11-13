@@ -1,0 +1,13 @@
+import 'package:http/http.dart' as http;
+
+Future<void> main() async {
+  final request = http.Request('POST', Uri.parse('https://api.example.com/v1/items?x=1&y=a%20b'));
+  request.headers.addAll({
+    'Content-Type': 'application/json',
+    'X-Token': 'a"b\$c\\d',
+    'Accept': 'text/html, */*',
+  });
+  request.body = '{"name":"it\'s \$x","t":"é"}\n';
+  final response = await http.Response.fromStream(await request.send());
+  print(response.body);
+}

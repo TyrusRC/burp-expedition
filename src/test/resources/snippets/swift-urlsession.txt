@@ -1,0 +1,21 @@
+import Foundation
+
+var request = URLRequest(url: URL(string: "https://api.example.com/v1/items?x=1&y=a%20b")!)
+request.httpMethod = "POST"
+request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+request.addValue("a\"b$c\\d", forHTTPHeaderField: "X-Token")
+request.addValue("text/html", forHTTPHeaderField: "Accept")
+request.addValue("*/*", forHTTPHeaderField: "Accept")
+request.httpBody = "{\"name\":\"it's $x\",\"t\":\"é\"}\n".data(using: .utf8)
+
+let semaphore = DispatchSemaphore(value: 0)
+let task = URLSession.shared.dataTask(with: request) { data, response, error in
+    if let error = error {
+        print(error)
+    } else if let data = data, let text = String(data: data, encoding: .utf8) {
+        print(text)
+    }
+    semaphore.signal()
+}
+task.resume()
+semaphore.wait()

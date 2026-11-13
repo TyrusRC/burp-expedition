@@ -1,0 +1,18 @@
+import Foundation
+
+var request = URLRequest(url: URL(string: "https://files.example.com:8443/up")!)
+request.httpMethod = "PUT"
+request.addValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
+request.httpBody = Data(base64Encoded: "AAECf//+YQ==")
+
+let semaphore = DispatchSemaphore(value: 0)
+let task = URLSession.shared.dataTask(with: request) { data, response, error in
+    if let error = error {
+        print(error)
+    } else if let data = data, let text = String(data: data, encoding: .utf8) {
+        print(text)
+    }
+    semaphore.signal()
+}
+task.resume()
+semaphore.wait()

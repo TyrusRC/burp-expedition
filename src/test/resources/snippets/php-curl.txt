@@ -1,0 +1,21 @@
+<?php
+$ch = curl_init();
+curl_setopt_array($ch, [
+    CURLOPT_URL => 'https://api.example.com/v1/items?x=1&y=a%20b',
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_CUSTOMREQUEST => 'POST',
+    CURLOPT_POSTFIELDS => '{"name":"it\'s $x","t":"é"}
+',
+    CURLOPT_HTTPHEADER => [
+        'Content-Type: application/json',
+        'X-Token: a"b$c\\d',
+        'Accept: text/html',
+        'Accept: */*',
+    ],
+]);
+$response = curl_exec($ch);
+if ($response === false) {
+    echo curl_error($ch);
+}
+curl_close($ch);
+echo $response;

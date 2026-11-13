@@ -1,0 +1,15 @@
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+
+fun main() {
+    val client = OkHttpClient()
+    val request = Request.Builder()
+        .url("http://localhost:8080/ping")
+        .method("GET", null)
+        .build()
+    client.newCall(request).execute().use { response ->
+        println(response.body?.string())
+    }
+}

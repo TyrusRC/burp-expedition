@@ -1,0 +1,15 @@
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let client = reqwest::Client::new();
+    let response = client
+        .request(reqwest::Method::POST, "https://api.example.com/v1/items?x=1&y=a%20b")
+        .header("Content-Type", "application/json")
+        .header("X-Token", "a\"b$c\\d")
+        .header("Accept", "text/html")
+        .header("Accept", "*/*")
+        .body("{\"name\":\"it's $x\",\"t\":\"é\"}\n")
+        .send()
+        .await?;
+    println!("{}", response.text().await?);
+    Ok(())
+}

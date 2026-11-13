@@ -25,8 +25,9 @@ class ListenersPanel(
     init {
         val addButton = JButton("Add Listener").apply { addActionListener { showAddDialog() } }
         val stopButton = JButton("Stop Selected").apply { addActionListener { stopSelected() } }
+        val startButton = JButton("Start Selected").apply { addActionListener { startSelected() } }
         val caButton = JButton("Configure CA Keystore...").apply { addActionListener { showCaDialog() } }
-        val buttonPanel = JPanel().apply { add(addButton); add(stopButton); add(caButton) }
+        val buttonPanel = JPanel().apply { add(addButton); add(startButton); add(stopButton); add(caButton) }
         component = JPanel(BorderLayout()).apply {
             add(JScrollPane(table), BorderLayout.CENTER)
             add(buttonPanel, BorderLayout.SOUTH)
@@ -70,6 +71,19 @@ class ListenersPanel(
         val upstreamProxyField = JTextField()
         val clientCertField = JTextField()
         val clientCertPwd = JPasswordField()
+        val framingBox = JComboBox(arrayOf("Passthrough", "LengthPrefix", "Delimiter"))
+        val lenOffsetField = JTextField("0")
+        val lenSizeField = JTextField("4")
+        val littleEndianBox = JCheckBox("little-endian")
+        val lenAdjField = JTextField("0")
+        val delimField = JTextField()
+        val maxFrameField = JTextField()
+        val passthroughField = JTextField()
+        val socksUserField = JTextField()
+        val socksPwdField = JPasswordField()
+        delimField.putClientProperty("JTextField.placeholderText", "e.g. \\r\\n (Delimiter framing)")
+        passthroughField.putClientProperty("JTextField.placeholderText", "MITM: host, *.suffix (comma separated)")
+        socksUserField.putClientProperty("JTextField.placeholderText", "SOCKS5 only (optional)")
 
         // Placeholder hints (FlatLaf, which Burp uses, renders these as grey text when empty).
         nameField.putClientProperty("JTextField.placeholderText", "e.g. redis-proxy")
@@ -93,13 +107,30 @@ class ListenersPanel(
             add(JLabel("Upstream proxy (host:port)")); add(upstreamProxyField)
             add(JLabel("Upstream client cert (.p12)")); add(clientCertField)
             add(JLabel("Client cert password")); add(clientCertPwd)
+            add(JLabel("TCP framing")); add(framingBox)
+            add(JLabel("Length offset / size")); add(JPanel(GridLayout(1, 2)).apply { add(lenOffsetField); add(lenSizeField) })
+            add(JLabel("Length byte order")); add(littleEndianBox)
+            add(JLabel("Length adjustment")); add(lenAdjField)
+            add(JLabel("Delimiter")); add(delimField)
+            add(JLabel("Max frame bytes")); add(maxFrameField)
+            add(JLabel("TLS passthrough (SNI)")); add(passthroughField)
+            add(JLabel("SOCKS5 username")); add(socksUserField)
+            add(JLabel("SOCKS5 password")); add(socksPwdField)
         }
 
         val result = JOptionPane.showConfirmDialog(component, form, "Add Listener", JOptionPane.OK_CANCEL_OPTION)
         if (result != JOptionPane.OK_OPTION) return
 
+        ListenerFormValidation.nonLoopbackWarning(bindHostField.text)?.let { warning ->
+            val ok = JOptionPane.showConfirmDialog(component, warning, "Non-loopback bind", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE)
+            if (ok != JOptionPane.YES_OPTION) return
+        }
+
         if (socksBox.isSelected) {
-            addSocks5(nameField.text.trim(), bindHostField.text.trim(), bindPortField.text.trim())
+            addSocks5(
+                nameField.text.trim(), bindHostField.text.trim(), bindPortField.text.trim(), tlsBox.selectedItem as TlsMode,
+                passthroughField.text, socksUserField.text, String(socksPwdField.password)
+            )
             return
         }
 
@@ -109,7 +140,12 @@ class ListenersPanel(
             certificateProviderConfigured,
             upstreamProxy = upstreamProxyField.text.trim(),
             clientCertPath = clientCertField.text.trim(),
-            clientCertPassword = clientCertPwd.password
+            clientCertPassword = clientCertPwd.password,
+            framing = FramingForm(
+                framingBox.selectedItem as String, lenOffsetField.text, lenSizeField.text, !littleEndianBox.isSelected,
+                lenAdjField.text, delimField.text, maxFrameField.text
+            ),
+            tlsPassthrough = passthroughField.text
         )
         validated.onSuccess { config ->
             tableModel.add(config)
@@ -119,19 +155,38 @@ class ListenersPanel(
         }
     }
 
-    private fun addSocks5(name: String, bindHost: String, bindPort: String) {
-        if (name.isBlank() || name in tableModel.names()) {
-            JOptionPane.showMessageDialog(component, "SOCKS5 listener needs a unique name", "Invalid listener", JOptionPane.ERROR_MESSAGE)
-            return
-        }
-        val port = bindPort.toIntOrNull()?.takeIf { it in 1..65535 } ?: run {
-            JOptionPane.showMessageDialog(component, "Bind port must be 1-65535", "Invalid listener", JOptionPane.ERROR_MESSAGE)
-            return
-        }
-        val host = bindHost.ifBlank { "127.0.0.1" }
-        // Cosmetic row: SOCKS5 has no fixed upstream (destinations are negotiated per-connection).
-        tableModel.add(ListenerConfig(name, Protocol.TCP, host, port, "(socks5 dynamic)", port))
-        onStartSocks5Listener(Socks5ListenerConfig(name, host, port))
+    private fun addSocks5(name: String, bindHost: String, bindPort: String, tls: TlsMode, passthrough: String, user: String, pwd: String) {
+        ListenerFormValidation.validateSocks5(name, bindHost, bindPort, tls, tableModel.names(), certificateProviderConfigured, passthrough, user, pwd)
+            .onSuccess { socksConfig ->
+                // Cosmetic row: SOCKS5 has no fixed upstream (destinations are negotiated per-connection).
+                tableModel.add(ListenerConfig(name, Protocol.TCP, socksConfig.bindHost, socksConfig.bindPort, "(socks5 dynamic)", socksConfig.bindPort))
+                socksByName[name] = socksConfig
+                onStartSocks5Listener(socksConfig)
+            }.onFailure { e ->
+                JOptionPane.showMessageDialog(component, e.message, "Invalid listener", JOptionPane.ERROR_MESSAGE)
+            }
+    }
+
+    /** Names of SOCKS5 rows (their table row is cosmetic), so "Start Selected" can pick the right starter. */
+    private val socksByName = HashMap<String, Socks5ListenerConfig>()
+
+    /** Adds a row for a restored listener WITHOUT starting it; use "Start Selected" to bind it. */
+    fun addRestored(config: ListenerConfig) {
+        if (config.name !in tableModel.names()) tableModel.add(config)
+    }
+
+    fun addRestoredSocks5(config: Socks5ListenerConfig) {
+        if (config.name in tableModel.names()) return
+        socksByName[config.name] = config
+        tableModel.add(ListenerConfig(config.name, Protocol.TCP, config.bindHost, config.bindPort, "(socks5 dynamic)", config.bindPort))
+    }
+
+    private fun startSelected() {
+        val row = table.selectedRow
+        if (row < 0) return
+        val config = tableModel.at(row)
+        socksByName[config.name]?.let { onStartSocks5Listener(it); return }
+        onStartListener(config)
     }
 
     private fun stopSelected() {
@@ -139,6 +194,7 @@ class ListenersPanel(
         if (row < 0) return
         val config = tableModel.at(row)
         onStopListener(config.name)
+        socksByName.remove(config.name)
         tableModel.remove(row)
     }
 }

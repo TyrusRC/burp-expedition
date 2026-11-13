@@ -1,0 +1,21 @@
+const http = require("https");
+
+const options = {
+  method: "PUT",
+  hostname: "files.example.com",
+  port: 8443,
+  path: "/up",
+  headers: {
+    "Content-Type": "application/octet-stream",
+  },
+};
+
+const req = http.request(options, (res) => {
+  const chunks = [];
+  res.on("data", (chunk) => chunks.push(chunk));
+  res.on("end", () => console.log(Buffer.concat(chunks).toString()));
+});
+
+req.on("error", (e) => console.error(e));
+req.write(Buffer.from("AAECf//+YQ==", "base64"));
+req.end();

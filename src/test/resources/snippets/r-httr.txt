@@ -1,0 +1,14 @@
+library(httr)
+
+response <- VERB(
+  "POST",
+  "https://api.example.com/v1/items?x=1&y=a%20b",
+  add_headers(
+    "Content-Type" = "application/json",
+    "X-Token" = "a\"b$c\\d",
+    "Accept" = "text/html, */*"
+  ),
+  body = "{\"name\":\"it's $x\",\"t\":\"é\"}\n",
+  encode = "raw"
+)
+cat(content(response, "text", encoding = "UTF-8"))

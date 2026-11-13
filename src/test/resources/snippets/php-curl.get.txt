@@ -1,0 +1,13 @@
+<?php
+$ch = curl_init();
+curl_setopt_array($ch, [
+    CURLOPT_URL => 'http://localhost:8080/ping',
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_CUSTOMREQUEST => 'GET',
+]);
+$response = curl_exec($ch);
+if ($response === false) {
+    echo curl_error($ch);
+}
+curl_close($ch);
+echo $response;

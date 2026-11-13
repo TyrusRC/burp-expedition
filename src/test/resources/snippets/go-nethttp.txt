@@ -1,0 +1,27 @@
+package main
+
+import (
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+)
+
+func main() {
+	payload := strings.NewReader("{\"name\":\"it's $x\",\"t\":\"é\"}\n")
+	req, err := http.NewRequest("POST", "https://api.example.com/v1/items?x=1&y=a%20b", payload)
+	if err != nil {
+		panic(err)
+	}
+	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("X-Token", "a\"b$c\\d")
+	req.Header.Add("Accept", "text/html")
+	req.Header.Add("Accept", "*/*")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		panic(err)
+	}
+	defer resp.Body.Close()
+	data, _ := io.ReadAll(resp.Body)
+	fmt.Println(string(data))
+}

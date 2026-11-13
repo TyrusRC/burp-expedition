@@ -1,0 +1,10 @@
+const response = await fetch("https://api.example.com/v1/items?x=1&y=a%20b", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "X-Token": "a\"b$c\\d",
+    "Accept": "text/html, */*",
+  },
+  body: "{\"name\":\"it's $x\",\"t\":\"é\"}\n",
+});
+console.log(await response.text());

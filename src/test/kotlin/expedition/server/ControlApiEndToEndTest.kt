@@ -31,6 +31,9 @@ class ControlApiEndToEndTest {
     private lateinit var registry: ConnectionRegistry
     private var apiPort = 0
     private val http = HttpClient.newHttpClient()
+    @org.junit.jupiter.api.io.TempDir lateinit var tempDir: java.io.File
+    // Null = no Burp CA loaded; TLS listeners must then be rejected at start.
+    @Volatile private var certProvider: expedition.tls.BurpCertificateProvider? = null
 
     private fun freePort() = ServerSocket(0).use { it.localPort }
 
@@ -39,10 +42,11 @@ class ControlApiEndToEndTest {
         registry = ConnectionRegistry()
         engine = ProxyEngine(
             registry, InterceptController(), MatchReplaceEngine(),
-            certificateProviderSupplier = { null }, onHeldMessage = { _, _, _, _ -> }, onError = { _, _ -> }
+            certificateProviderSupplier = { certProvider }, onHeldMessage = { _, _, _, _ -> }, onError = { _, _ -> }
         )
         apiPort = freePort()
         server = ControlApiServer(
+            authToken = TEST_TOKEN,
             host = "127.0.0.1", port = apiPort,
             registry = registry, matchReplace = MatchReplaceEngine(), intercept = InterceptController(),
             startListener = { engine.startListenerChecked(it) },
@@ -61,13 +65,13 @@ class ControlApiEndToEndTest {
 
     private fun post(path: String, body: String): HttpResponse<String> =
         http.send(
-            HttpRequest.newBuilder(URI.create("http://127.0.0.1:$apiPort$path"))
+            authed(URI.create("http://127.0.0.1:$apiPort$path"))
                 .POST(HttpRequest.BodyPublishers.ofString(body)).build(),
             HttpResponse.BodyHandlers.ofString()
         )
 
     private fun get(path: String) =
-        http.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:$apiPort$path")).build(),
+        http.send(authed(URI.create("http://127.0.0.1:$apiPort$path")).build(),
             HttpResponse.BodyHandlers.ofString())
 
     private fun relay(socket: Socket, payload: String, replyLen: Int): String {
@@ -138,10 +142,25 @@ class ControlApiEndToEndTest {
 
     @Test
     fun `accepts a STARTTLS listener via the API`() {
+        certProvider = expedition.tls.BurpCertificateProvider(
+            expedition.engine.TestCa.keystore(tempDir, "Test CA", ca = true), expedition.engine.TestCa.password)
         val port = freePort()
         val r = post("/listeners",
             """{"name":"stls","protocol":"tcp","bind_port":$port,"upstream_host":"127.0.0.1","upstream_port":25,"tls":"starttls"}""")
         assertEquals(200, r.statusCode(), r.body())
         assertTrue(get("/status").body().contains("stls"))
+    }
+
+    @Test
+    fun `a TLS listener without a CA is rejected at start, not per connection`() {
+        for (mode in listOf("starttls", "mitm")) {
+            val r = post("/listeners",
+                """{"name":"nocert-$mode","protocol":"tcp","bind_port":${freePort()},"upstream_host":"127.0.0.1","upstream_port":25,"tls":"$mode"}""")
+            assertNotEquals(200, r.statusCode(), r.body())
+            assertTrue(r.body().contains("certificate provider"), r.body())
+            assertFalse(engine.runningListenerNames().contains("nocert-$mode"))
+        }
+        val s = post("/listeners", """{"name":"nocert-socks","protocol":"socks5","bind_port":${freePort()},"tls":"mitm"}""")
+        assertNotEquals(200, s.statusCode(), s.body())
     }
 }

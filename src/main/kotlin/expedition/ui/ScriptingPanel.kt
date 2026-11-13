@@ -10,7 +10,7 @@ import javax.swing.*
  * error is shown and the previous script stays active.
  */
 class ScriptingPanel(private val hooks: ScriptHooks) {
-    private val editor = JTextArea(hooks.source ?: "").apply { tabSize = 2 }
+    private val editor = JTextArea(hooks.source ?: hooks.pendingSource ?: "").apply { tabSize = 2 }
     private val status = JLabel()
     val component: JComponent
 
@@ -43,6 +43,8 @@ class ScriptingPanel(private val hooks: ScriptHooks) {
     }
 
     private fun refreshStatus() {
+        if (hooks.source == null && hooks.pendingSource != null)
+            status.text = "Script restored from the project is NOT active - review it, then click Apply."
         if (!hooks.engineAvailable) status.text = "No JSR-223 engine on the classpath — scripting disabled."
     }
 }

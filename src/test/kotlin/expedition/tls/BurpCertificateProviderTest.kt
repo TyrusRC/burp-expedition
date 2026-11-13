@@ -84,6 +84,65 @@ class BurpCertificateProviderTest {
         }
     }
 
+    @Test
+    fun `leaf cache is a bounded LRU`() {
+        val provider = BurpCertificateProvider(keystoreFile, password, maxCachedLeaves = 2)
+        val a = provider.leafCertificateFor("a.test")
+        provider.leafCertificateFor("b.test")
+        assertSame(a.first, provider.leafCertificateFor("a.test").first) // touch a -> b is eldest
+        provider.leafCertificateFor("c.test")                             // evicts b
+        assertEquals(2, provider.cachedLeafCount())
+        assertSame(a.first, provider.leafCertificateFor("a.test").first)
+        repeat(20) { provider.leafCertificateFor("h$it.test") }
+        assertEquals(2, provider.cachedLeafCount())
+        assertNotSame(a.first, provider.leafCertificateFor("a.test").first) // a was evicted and re-minted
+    }
+
+    @Test
+    fun `serial numbers are random, positive and at most 20 octets`() {
+        val provider = BurpCertificateProvider(keystoreFile, password)
+        val serials = (1..5).map { provider.leafCertificateFor("s$it.test").first.serialNumber }
+        assertEquals(5, serials.toSet().size)
+        serials.forEach {
+            assertTrue(it.signum() > 0)
+            assertTrue(it.toByteArray().size <= 20)
+            assertTrue(it.bitLength() > 64, "serial should not look like an epoch-ms counter: $it")
+        }
+    }
+
+    @Test
+    fun `SAN entries are typed as DNS name or IP address`() {
+        val provider = BurpCertificateProvider(keystoreFile, password)
+        val (leaf, _) = provider.leafCertificateFor(listOf("api.example.test", "10.1.2.3", "[::1]"))
+        val sans = leaf.subjectAlternativeNames.map { (it[0] as Int) to (it[1] as String) }
+        assertTrue(2 to "api.example.test" in sans, sans.toString())
+        assertTrue(7 to "10.1.2.3" in sans, sans.toString())
+        assertTrue(sans.any { it.first == 7 && (it.second == "0:0:0:0:0:0:0:1" || it.second == "::1") }, sans.toString())
+        assertEquals("CN=api.example.test", leaf.subjectX500Principal.name)
+    }
+
+    @Test
+    fun `a hostile name cannot inject extra subject RDNs`() {
+        val provider = BurpCertificateProvider(keystoreFile, password)
+        val (leaf, _) = provider.leafCertificateFor("evil,O=Injected")
+        val subject = X500Name.getInstance(leaf.subjectX500Principal.encoded)
+        assertEquals(1, subject.rdNs.size, subject.toString())
+        assertTrue(subject.getRDNs(org.bouncycastle.asn1.x500.style.BCStyle.O).isEmpty(), subject.toString())
+    }
+
+    @Test
+    fun `host name validation`() {
+        assertTrue(BurpCertificateProvider.isValidHostName("a.example.test"))
+        assertTrue(BurpCertificateProvider.isValidHostName("127.0.0.1"))
+        assertTrue(BurpCertificateProvider.isValidHostName("::1"))
+        assertFalse(BurpCertificateProvider.isValidHostName(null))
+        assertFalse(BurpCertificateProvider.isValidHostName(""))
+        assertFalse(BurpCertificateProvider.isValidHostName("a b.test"))
+        assertFalse(BurpCertificateProvider.isValidHostName("a,b.test"))
+        assertFalse(BurpCertificateProvider.isValidHostName("*.test"))
+        assertFalse(BurpCertificateProvider.isValidHostName("a".repeat(64) + ".test"))
+    }
+
     private fun writeThrowawayCaKeystore(file: File, password: CharArray) {
         val keyGen = KeyPairGenerator.getInstance("RSA")
         keyGen.initialize(2048)

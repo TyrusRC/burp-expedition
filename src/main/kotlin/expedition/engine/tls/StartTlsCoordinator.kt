@@ -2,6 +2,7 @@ package expedition.engine.tls
 
 import expedition.engine.ListenerConfig
 import expedition.engine.StartTlsDetector
+import expedition.engine.TcpConnection
 import expedition.tls.BurpCertificateProvider
 import io.netty.channel.Channel
 import java.util.concurrent.atomic.AtomicBoolean
@@ -18,7 +19,9 @@ import java.util.concurrent.atomic.AtomicBoolean
 class StartTlsCoordinator(
     private val detector: StartTlsDetector,
     private val provider: BurpCertificateProvider,
-    private val config: ListenerConfig
+    private val config: ListenerConfig,
+    /** Called with the connection id once the client-side TLS (MITM) handshake succeeded. */
+    private val onMitmHandshake: (Long) -> Unit = {}
 ) {
     private val upgraded = AtomicBoolean(false)
 
@@ -31,20 +34,21 @@ class StartTlsCoordinator(
     fun isGoAhead(bytes: ByteArray): Boolean = !upgraded.get() && detector.onUpstreamData(bytes)
 
     /**
-     * Insert the TLS handlers on both legs. Call from the CLIENT channel's event loop — e.g. the
-     * go-ahead write's completion listener — so the client-side SslHandler is in place before the
-     * client's ClientHello can arrive, while the plaintext go-ahead is already flushed.
+     * Insert the TLS handlers. Call from the CLIENT channel's event loop, right after the plaintext
+     * go-ahead has been written, so the SNI router is in place before the client's ClientHello can
+     * arrive. The router mints the client-facing leaf from the ClientHello's SNI (fallback: the
+     * listener's upstream host); only then is upstream TLS started (with that SNI), or — if the
+     * SNI matches `tls_passthrough` — the connection switches to a raw relay.
      */
-    fun upgrade(clientChannel: Channel, upstreamChannel: Channel) {
+    fun upgrade(clientChannel: Channel, connection: TcpConnection) {
         if (!upgraded.compareAndSet(false, true)) return
-        val serverCtx = TcpTlsSupport.serverContext(provider, config.upstreamHost)
-        clientChannel.pipeline().addFirst("starttls-server-ssl", serverCtx.newHandler(clientChannel.alloc()))
-        upstreamChannel.eventLoop().execute {
-            val clientCtx = TcpTlsSupport.clientContext(config.upstreamClientAuth)
-            upstreamChannel.pipeline().addFirst(
-                "starttls-client-ssl",
-                clientCtx.newHandler(upstreamChannel.alloc(), config.upstreamHost, config.upstreamPort)
-            )
+        val router = SniTlsRouter(provider, config.upstreamHost, TlsPassthroughMatcher(config.tlsPassthrough),
+            onMitmHandshake = { onMitmHandshake(connection.connectionId) }) { _, decision ->
+            when (decision) {
+                is TlsDecision.Passthrough -> { connection.enterPassthrough(decision.sni); null }
+                is TlsDecision.Mitm -> connection.startUpstreamTls(decision.sni ?: config.upstreamHost, decision.alpn)
+            }
         }
+        clientChannel.pipeline().addFirst(SniTlsRouter.NAME, router)
     }
 }

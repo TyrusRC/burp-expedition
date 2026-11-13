@@ -30,6 +30,54 @@ object DefaultCa {
     private const val CA_FILE = "expedition-ca.p12"
     private const val CRT_FILE = "expedition-ca.crt"
     private const val ALIAS = "expedition-ca"
+    private const val PASS_FILE = "expedition-ca.pass"
+
+    /** Password used by CAs created before per-machine passwords existed. Kept as a fallback only. */
+    const val LEGACY_PASSWORD = "expedition"
+
+    /**
+     * Picks the keystore password for the CA under [dir]:
+     *  1. [envPassword] (EXPEDITION_CA_PASSWORD) when set,
+     *  2. otherwise the random password stored in `expedition-ca.pass` (created on first use, mode 600),
+     *  3. otherwise [LEGACY_PASSWORD] for a CA that predates this scheme.
+     * When a keystore already exists, the first candidate that actually opens it wins, so an
+     * existing CA stays usable after the env var changes or the legacy password is in use.
+     */
+    fun resolvePassword(dir: File, envPassword: String?): CharArray {
+        dir.mkdirs()
+        val p12 = File(dir, CA_FILE)
+        val passFile = File(dir, PASS_FILE)
+        val env = envPassword?.takeIf { it.isNotEmpty() }
+        val stored = passFile.takeIf { it.exists() }?.readText()?.trim()?.takeIf { it.isNotEmpty() }
+
+        if (!p12.exists()) {
+            // Fresh CA: explicit env wins; else reuse or mint a random per-machine password.
+            env?.let { return it.toCharArray() }
+            stored?.let { return it.toCharArray() }
+            val generated = randomPassword()
+            writeOwnerOnly(passFile, generated)
+            return generated.toCharArray()
+        }
+        val candidates = listOfNotNull(env, stored, LEGACY_PASSWORD).distinct()
+        val opened = candidates.firstOrNull { canOpen(p12, it.toCharArray()) }
+        return (opened ?: env ?: stored ?: LEGACY_PASSWORD).toCharArray()
+    }
+
+    private fun canOpen(p12: File, password: CharArray): Boolean = runCatching {
+        p12.inputStream().use { KeyStore.getInstance("PKCS12").load(it, password) }
+    }.isSuccess
+
+    private fun randomPassword(): String {
+        val bytes = ByteArray(24).also { java.security.SecureRandom().nextBytes(it) }
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
+    }
+
+    /** Creates [f] with owner-only permissions (0600 on POSIX) before writing the secret into it. */
+    private fun writeOwnerOnly(f: File, content: String) {
+        f.createNewFile()
+        restrictToOwner(f)
+        f.writeText(content)
+    }
 
     /** Returns the CA keystore under [dir], generating (and persisting) it once if absent. */
     fun ensureDefaultCa(dir: File, password: CharArray): File {

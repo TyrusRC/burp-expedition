@@ -1,0 +1,4 @@
+wget --quiet \
+  --method 'GET' \
+  -O - \
+  'http://localhost:8080/ping'

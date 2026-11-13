@@ -71,4 +71,18 @@ class ScriptHooksTest {
         assertEquals("z", String(h.transform(1, "CLIENT_TO_UPSTREAM", "z".toByteArray())))
         assertThrows(IllegalStateException::class.java) { h.setScript("'a'.getBytes()") }
     }
+
+    // H2: a script restored from a Burp project is held as text and never runs until applied.
+    @Test fun `restorePending keeps the script inactive until it is applied`() {
+        val h = hooks()
+        h.restorePending("new String(bytes).toUpperCase().getBytes()")
+        assertEquals(null, h.source)
+        assertEquals("hello", String(h.transform(1, "CLIENT_TO_UPSTREAM", "hello".toByteArray())))
+        assertNotNull(h.pendingSource)
+        h.setScript(h.pendingSource)
+        assertEquals(null, h.pendingSource)
+        assertEquals("HELLO", String(h.transform(1, "CLIENT_TO_UPSTREAM", "hello".toByteArray())))
+        h.restorePending("x"); h.setScript(null)
+        assertEquals(null, h.pendingSource)
+    }
 }

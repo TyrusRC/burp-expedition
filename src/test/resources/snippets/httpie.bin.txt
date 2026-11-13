@@ -1,0 +1,2 @@
+base64 -d <<< 'AAECf//+YQ==' | http PUT 'https://files.example.com:8443/up' \
+  'Content-Type:application/octet-stream'

@@ -10,7 +10,6 @@ import javax.swing.*
 class MatchReplacePanel(private val engine: MatchReplaceEngine) {
     private val tableModel = MatchReplaceTableModel(engine)
     private val table = JTable(tableModel)
-    private val nextId = AtomicLong(1)
     val component: JComponent
 
     init {
@@ -38,7 +37,7 @@ class MatchReplacePanel(private val engine: MatchReplaceEngine) {
         if (result != JOptionPane.OK_OPTION) return
 
         val validated = MatchReplaceFormValidation.validate(
-            typeBox.selectedItem as MatchType, matchField.text, replaceField.text, nextId.getAndIncrement(),
+            typeBox.selectedItem as MatchType, matchField.text, replaceField.text, engine.nextRuleId(),
             decodedBox.isSelected
         )
         validated.onSuccess { rule ->

@@ -1,0 +1,17 @@
+<?php
+$ch = curl_init();
+curl_setopt_array($ch, [
+    CURLOPT_URL => 'https://files.example.com:8443/up',
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_CUSTOMREQUEST => 'PUT',
+    CURLOPT_POSTFIELDS => base64_decode('AAECf//+YQ=='),
+    CURLOPT_HTTPHEADER => [
+        'Content-Type: application/octet-stream',
+    ],
+]);
+$response = curl_exec($ch);
+if ($response === false) {
+    echo curl_error($ch);
+}
+curl_close($ch);
+echo $response;

@@ -1,0 +1,22 @@
+const http = require("https");
+
+const options = {
+  method: "POST",
+  hostname: "api.example.com",
+  path: "/v1/items?x=1&y=a%20b",
+  headers: {
+    "Content-Type": "application/json",
+    "X-Token": "a\"b$c\\d",
+    "Accept": "text/html, */*",
+  },
+};
+
+const req = http.request(options, (res) => {
+  const chunks = [];
+  res.on("data", (chunk) => chunks.push(chunk));
+  res.on("end", () => console.log(Buffer.concat(chunks).toString()));
+});
+
+req.on("error", (e) => console.error(e));
+req.write("{\"name\":\"it's $x\",\"t\":\"é\"}\n");
+req.end();

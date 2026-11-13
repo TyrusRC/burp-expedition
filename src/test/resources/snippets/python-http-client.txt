@@ -1,0 +1,12 @@
+import http.client
+
+conn = http.client.HTTPSConnection("api.example.com")
+payload = "{\"name\":\"it's $x\",\"t\":\"é\"}\n".encode("utf-8")
+headers = {
+    "Content-Type": "application/json",
+    "X-Token": "a\"b$c\\d",
+    "Accept": "text/html, */*",
+}
+conn.request("POST", "/v1/items?x=1&y=a%20b", payload, headers)
+res = conn.getresponse()
+print(res.read().decode("utf-8"))

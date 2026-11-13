@@ -1,0 +1,3 @@
+$body = [Convert]::FromBase64String('AAECf//+YQ==')
+$response = Invoke-WebRequest -Uri 'https://files.example.com:8443/up' -Method PUT -ContentType 'application/octet-stream' -Body $body
+$response.Content

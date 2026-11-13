@@ -1,0 +1,26 @@
+#import <Foundation/Foundation.h>
+
+int main(int argc, const char * argv[]) {
+    @autoreleasepool {
+        NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:@"https://api.example.com/v1/items?x=1&y=a%20b"]];
+        [request setHTTPMethod:@"POST"];
+        [request addValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+        [request addValue:@"a\"b$c\\d" forHTTPHeaderField:@"X-Token"];
+        [request addValue:@"text/html" forHTTPHeaderField:@"Accept"];
+        [request addValue:@"*/*" forHTTPHeaderField:@"Accept"];
+        [request setHTTPBody:[@"{\"name\":\"it's $x\",\"t\":\"é\"}\n" dataUsingEncoding:NSUTF8StringEncoding]];
+
+        dispatch_semaphore_t semaphore = dispatch_semaphore_create(0);
+        NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+            if (error) {
+                NSLog(@"%@", error);
+            } else {
+                NSLog(@"%@", [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding]);
+            }
+            dispatch_semaphore_signal(semaphore);
+        }];
+        [task resume];
+        dispatch_semaphore_wait(semaphore, DISPATCH_TIME_FOREVER);
+    }
+    return 0;
+}

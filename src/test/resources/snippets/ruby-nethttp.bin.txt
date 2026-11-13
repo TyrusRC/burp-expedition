@@ -1,0 +1,11 @@
+require "net/http"
+require "uri"
+
+uri = URI.parse("https://files.example.com:8443/up")
+http = Net::HTTP.new(uri.host, uri.port)
+http.use_ssl = true
+request = Net::HTTP::Put.new(uri.request_uri)
+request["Content-Type"] = "application/octet-stream"
+request.body = "AAECf//+YQ==".unpack1("m")
+response = http.request(request)
+puts response.body

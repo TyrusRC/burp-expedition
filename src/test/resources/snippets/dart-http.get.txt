@@ -1,0 +1,7 @@
+import 'package:http/http.dart' as http;
+
+Future<void> main() async {
+  final request = http.Request('GET', Uri.parse('http://localhost:8080/ping'));
+  final response = await http.Response.fromStream(await request.send());
+  print(response.body);
+}

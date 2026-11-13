@@ -70,6 +70,24 @@ object SessionStore {
         return SessionSnapshot(connections, messages, tags)
     }
 
+    /**
+     * Fully restores [snapshot] into the live [registry] and [tagStore] (connections, messages and
+     * tags, ids/direction/timestamps/bytes preserved). Safe to call repeatedly with the same
+     * snapshot: duplicates are skipped. Tags follow any id re-keying done by the registry.
+     */
+    fun restore(
+        snapshot: SessionSnapshot,
+        registry: expedition.registry.ConnectionRegistry,
+        tagStore: FlowTagStore,
+    ): expedition.registry.ConnectionRegistry.ImportResult {
+        val result = registry.importSnapshot(snapshot.connections, snapshot.messages)
+        snapshot.tags.forEach { (id, ts) ->
+            val target = result.connectionIdMap[id] ?: return@forEach
+            ts.forEach { tagStore.tag(target, it) }
+        }
+        return result
+    }
+
     private fun long(o: Map<String, Any?>, key: String): Long = when (val x = o[key]) {
         is Number -> x.toLong()
         is String -> x.toLongOrNull() ?: 0L

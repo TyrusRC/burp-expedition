@@ -1,0 +1,20 @@
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+
+public class Main {
+    public static void main(String[] args) throws Exception {
+        HttpClient client = HttpClient.newHttpClient();
+        HttpRequest request = HttpRequest.newBuilder()
+            .uri(URI.create("https://api.example.com/v1/items?x=1&y=a%20b"))
+            .header("Content-Type", "application/json")
+            .header("X-Token", "a\"b$c\\d")
+            .header("Accept", "text/html")
+            .header("Accept", "*/*")
+            .method("POST", HttpRequest.BodyPublishers.ofString("{\"name\":\"it's $x\",\"t\":\"é\"}\n"))
+            .build();
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        System.out.println(response.body());
+    }
+}

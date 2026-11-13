@@ -20,8 +20,8 @@ import javax.script.SimpleBindings
  * Never wire script-setting to an untrusted input.
  *
  * Engine-agnostic: we do NOT bundle an interpreter. The engine is discovered from the host
- * classpath (Burp ships Groovy; an operator can add any JSR-223 engine). With no engine present
- * the hook is a safe no-op. Scripts are compiled once (Compilable) and re-run per message.
+ * classpath (whichever JSR-223 engine is present — Expedition does not verify that Burp ships
+ * one; an operator can add any). With no engine present the hook is a safe no-op. Scripts are compiled once (Compilable) and re-run per message.
  *
  * Fail-safe: a runtime error in the script never drops or corrupts traffic — the original bytes
  * are forwarded unchanged and the error is exposed via [lastError].
@@ -41,11 +41,23 @@ class ScriptHooks(
     @Volatile var lastError: String? = null
         private set
 
+    /**
+     * A script restored from a (possibly untrusted) Burp project, held as text only: it is
+     * never compiled or run until the operator reviews it and applies it via [setScript].
+     */
+    @Volatile var pendingSource: String? = null
+        private set
+
     val engineAvailable: Boolean get() = engine != null
+
+    /** Stores [script] as [pendingSource] without compiling or installing it. */
+    fun restorePending(script: String?) {
+        pendingSource = script?.takeIf { it.isNotBlank() }
+    }
 
     /** Compile and install [script] (null/blank clears it). Throws if there is no engine or the script won't compile. */
     fun setScript(script: String?) {
-        if (script.isNullOrBlank()) { compiled = null; source = null; lastError = null; return }
+        if (script.isNullOrBlank()) { compiled = null; source = null; pendingSource = null; lastError = null; notifyChanged(); return }
         val e = engine ?: throw IllegalStateException("no JSR-223 script engine is available")
         val c = e as? Compilable ?: throw IllegalStateException("script engine does not support compilation")
         compiled = try {
@@ -54,8 +66,14 @@ class ScriptHooks(
             throw IllegalArgumentException("script failed to compile: ${ex.message}", ex)
         }
         source = script
+        pendingSource = null
         lastError = null
+        notifyChanged()
     }
+
+    /** Invoked after the installed script changes (used to persist configuration). Must not throw. */
+    @Volatile var onChange: (() -> Unit)? = null
+    private fun notifyChanged() { runCatching { onChange?.invoke() } }
 
     /** Run the installed script against [bytes]; returns the (possibly transformed) bytes, never null. */
     fun transform(connectionId: Long, direction: String, bytes: ByteArray): ByteArray {

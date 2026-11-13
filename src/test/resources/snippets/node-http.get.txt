@@ -1,0 +1,17 @@
+const http = require("http");
+
+const options = {
+  method: "GET",
+  hostname: "localhost",
+  port: 8080,
+  path: "/ping",
+};
+
+const req = http.request(options, (res) => {
+  const chunks = [];
+  res.on("data", (chunk) => chunks.push(chunk));
+  res.on("end", () => console.log(Buffer.concat(chunks).toString()));
+});
+
+req.on("error", (e) => console.error(e));
+req.end();

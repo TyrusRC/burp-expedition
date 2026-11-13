@@ -1,0 +1,12 @@
+library(httr)
+
+response <- VERB(
+  "PUT",
+  "https://files.example.com:8443/up",
+  add_headers(
+    "Content-Type" = "application/octet-stream"
+  ),
+  body = as.raw(c(0x00, 0x01, 0x02, 0x7f, 0xff, 0xfe, 0x61)),
+  encode = "raw"
+)
+cat(content(response, "text", encoding = "UTF-8"))

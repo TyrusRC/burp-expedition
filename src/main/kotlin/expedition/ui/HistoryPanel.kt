@@ -30,9 +30,11 @@ class HistoryPanel(
         val refreshButton = JButton("Refresh").apply { addActionListener { refresh() } }
         val replayButton = JButton("Replay Selected Connection").apply { addActionListener { replaySelected() } }
         val tagButton = JButton("Tag Selected...").apply { addActionListener { tagSelected() } }
-        val exportButton = JButton("Export Session...").apply { addActionListener { exportSession() } }
-        val importButton = JButton("Import Session...").apply { addActionListener { importSession() } }
+        val exportButton = JButton("Export Session...").apply { addActionListener { exportSession(this) } }
+        val importButton = JButton("Import Session...").apply { addActionListener { importSession(this) } }
         val buttonPanel = JPanel().apply { add(refreshButton); add(replayButton); add(tagButton); add(exportButton); add(importButton) }
+        expedition.export.ExportUi.buttons(buttonPanel,registry, { connectionTable.selectedRow.takeIf { it >= 0 }?.let { connectionModel.at(it).connectionId } }, ::refresh).forEach { buttonPanel.add(it) }
+        buttonPanel.add(expedition.rules.RulesUi.createFromHistoryButton(registry) { connectionTable.selectedRow.takeIf { it >= 0 }?.let { connectionModel.at(it).connectionId } })
 
         val split = JSplitPane(JSplitPane.HORIZONTAL_SPLIT, JScrollPane(connectionTable), JScrollPane(messagesArea))
         component = JPanel(BorderLayout()).apply {
@@ -55,41 +57,44 @@ class HistoryPanel(
         if (tag.isNotEmpty()) flowTagStore.tag(id, tag)
     }
 
-    private fun exportSession() {
+    private fun exportSession(button: AbstractButton) {
         val chooser = JFileChooser().apply { dialogTitle = "Export session to JSON" }
         if (chooser.showSaveDialog(component) != JFileChooser.APPROVE_OPTION) return
-        val snapshot = SessionSnapshot(registry.allConnections(), registry.allMessages(), flowTagStore.all())
-        try {
-            chooser.selectedFile.writeText(SessionStore.export(snapshot))
-            JOptionPane.showMessageDialog(component, "Exported ${snapshot.connections.size} connections.")
-        } catch (e: Exception) {
-            JOptionPane.showMessageDialog(component, "Export failed: ${e.message}", "Error", JOptionPane.ERROR_MESSAGE)
-        }
+        val target = chooser.selectedFile
+        BackgroundTask.run(component, button, "Exporting...", "Export", {
+            val snapshot = SessionSnapshot(registry.allConnections(), registry.allMessages(), flowTagStore.all())
+            target.writeText(SessionStore.export(snapshot))
+            "Exported ${snapshot.connections.size} connections."
+        })
     }
 
-    private fun importSession() {
+    private fun importSession(button: AbstractButton) {
         val chooser = JFileChooser().apply { dialogTitle = "Import session JSON" }
         if (chooser.showOpenDialog(component) != JFileChooser.APPROVE_OPTION) return
-        try {
-            val snapshot = SessionStore.import(File(chooser.selectedFile.path).readText())
-            flowTagStore.load(snapshot.tags)
-            // NOTE: tags are merged into the live store and the snapshot is shown read-only;
-            // re-populating the live History table from an imported session is a follow-up.
-            messagesArea.text = snapshot.connections.joinToString("\n") { c ->
-                "#${c.connectionId} ${c.protocol} ${c.clientAddress} -> ${c.upstreamAddress}  tags=${snapshot.tags[c.connectionId] ?: emptySet<String>()}"
-            }
-            JOptionPane.showMessageDialog(component, "Imported ${snapshot.connections.size} connections, ${snapshot.messages.size} messages.")
-        } catch (e: Exception) {
-            JOptionPane.showMessageDialog(component, "Import failed: ${e.message}", "Error", JOptionPane.ERROR_MESSAGE)
-        }
+        val source = File(chooser.selectedFile.path)
+        BackgroundTask.run(component, button, "Importing...", "Import", {
+            val snapshot = SessionStore.import(source.readText())
+            val restored = SessionStore.restore(snapshot, registry, flowTagStore)
+            "Imported ${restored.connectionsAdded} connections, ${restored.messagesAdded} messages (${restored.skippedDuplicates} duplicates skipped)."
+        }, afterSuccess = ::refresh)
     }
 
     private fun renderMessagesFor(connectionId: Long) {
-        val rendered = registry.messagesFor(connectionId).joinToString("\n") { message ->
-            val dissector = dissectorRegistry.dissectorFor(message)
-            "[${message.direction}] ${dissector.render(message)}"
+        messagesArea.text = "Loading..."
+        DisplayLimit.worker.execute {
+            val shown = DisplayLimit.joinBounded(registry.messagesFor(connectionId).asSequence().map { message ->
+                val dissector = dissectorRegistry.dissectorFor(message)
+                "[${message.direction}] ${DisplayLimit.truncate(dissector.render(message), totalBytes = message.rawBytes.size).text}"
+            })
+            SwingUtilities.invokeLater {
+                // Ignore stale results if the selection moved on.
+                val row = connectionTable.selectedRow
+                if (row >= 0 && connectionModel.at(row).connectionId == connectionId) {
+                    messagesArea.text = shown.text
+                    messagesArea.caretPosition = 0
+                }
+            }
         }
-        messagesArea.text = rendered
     }
 
     private fun replaySelected() {
@@ -97,17 +102,20 @@ class HistoryPanel(
         if (row < 0) return
         val summary = connectionModel.at(row)
         val (host, port) = UpstreamAddressParser.parse(summary.upstreamAddress)
-        val firstClientMessage = registry.messagesFor(summary.connectionId)
-            .firstOrNull { it.direction == expedition.registry.Direction.CLIENT_TO_UPSTREAM } ?: return
-
-        val newConnectionId = registry.openConnection("${summary.listenerName}-replay", summary.protocol, "replay", summary.upstreamAddress)
-        registry.recordMessage(newConnectionId, expedition.registry.Direction.CLIENT_TO_UPSTREAM, firstClientMessage.rawBytes)
-        val response = replaySender.replay(summary.protocol, host, port, firstClientMessage.rawBytes)
-        if (response.isNotEmpty()) {
-            registry.recordMessage(newConnectionId, expedition.registry.Direction.UPSTREAM_TO_CLIENT, response)
+        DisplayLimit.worker.execute {
+            val firstClientMessage = registry.messagesFor(summary.connectionId)
+                .firstOrNull { it.direction == expedition.registry.Direction.CLIENT_TO_UPSTREAM } ?: return@execute
+            val newConnectionId = registry.openConnection("${summary.listenerName}-replay", summary.protocol, "replay", summary.upstreamAddress)
+            registry.recordMessage(newConnectionId, expedition.registry.Direction.CLIENT_TO_UPSTREAM, firstClientMessage.rawBytes)
+            val response = try {
+                replaySender.replay(summary.protocol, host, port, firstClientMessage.rawBytes)
+            } catch (e: Exception) { ByteArray(0) }
+            if (response.isNotEmpty()) {
+                registry.recordMessage(newConnectionId, expedition.registry.Direction.UPSTREAM_TO_CLIENT, response)
+            }
+            registry.closeConnection(newConnectionId)
+            SwingUtilities.invokeLater { refresh() }
         }
-        registry.closeConnection(newConnectionId)
-        refresh()
     }
 }
 

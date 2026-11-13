@@ -1,0 +1,7 @@
+curl -X POST 'https://api.example.com/v1/items?x=1&y=a%20b' \
+  -H 'Content-Type: application/json' \
+  -H 'X-Token: a"b$c\d' \
+  -H 'Accept: text/html' \
+  -H 'Accept: */*' \
+  --data-binary '{"name":"it'\''s $x","t":"é"}
+'

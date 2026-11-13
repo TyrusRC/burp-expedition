@@ -1,0 +1,7 @@
+http POST 'https://api.example.com/v1/items?x=1&y=a%20b' \
+  'Content-Type:application/json' \
+  'X-Token:a"b$c\d' \
+  'Accept:text/html' \
+  'Accept:*/*' \
+  --raw '{"name":"it'\''s $x","t":"é"}
+'

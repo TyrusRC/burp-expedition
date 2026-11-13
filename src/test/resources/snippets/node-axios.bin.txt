@@ -1,0 +1,14 @@
+const axios = require("axios");
+
+axios({
+  method: "put",
+  url: "https://files.example.com:8443/up",
+  headers: {
+    "Content-Type": "application/octet-stream",
+  },
+  data: Buffer.from("AAECf//+YQ==", "base64"),
+  responseType: "text",
+  transformResponse: (d) => d,
+})
+  .then((res) => console.log(res.data))
+  .catch((err) => console.error(err));

@@ -19,11 +19,19 @@ class InterceptPanel(
 
     init {
         val interceptToggle = JCheckBox("Intercept is on").apply {
-            addActionListener { interceptController.setEnabled(isSelected) }
+            addActionListener {
+                DisplayLimit.toggleIntercept(DisplayLimit.interceptWorker, interceptController, isSelected) { actual ->
+                    SwingUtilities.invokeLater { isSelected = actual }
+                }
+            }
         }
         list.addListSelectionListener {
             val selected = list.selectedValue ?: return@addListSelectionListener
-            editor.text = renderedTextFor(selected)
+            val shown = DisplayLimit.truncate(renderedTextFor(selected), totalBytes = selected.bytes.size)
+            editor.text = shown.text
+            editor.caretPosition = 0
+            // A truncated view must not be edited back: forward the original bytes instead.
+            editor.isEditable = !shown.truncated
         }
         val forwardButton = JButton("Forward").apply { addActionListener { forwardSelected() } }
         val dropButton = JButton("Drop").apply { addActionListener { dropSelected() } }
@@ -50,14 +58,22 @@ class InterceptPanel(
     private fun forwardSelected() {
         val entry = list.selectedValue ?: return
         val message = ProxyMessage(entry.heldMessageId, entry.connectionId, entry.direction, Instant.now(), entry.bytes)
-        val editedBytes = dissectorRegistry.dissectorFor(message).parseEdit(editor.text, message)
-        interceptController.forward(entry.heldMessageId, editedBytes)
+        val text = editor.text
+        val editable = editor.isEditable
         listModel.removeById(entry.heldMessageId)
+        DisplayLimit.worker.execute {
+            try {
+                val editedBytes = if (editable) dissectorRegistry.dissectorFor(message).parseEdit(text, message) else entry.bytes
+                interceptController.forward(entry.heldMessageId, editedBytes)
+            } catch (e: Exception) {
+                interceptController.forward(entry.heldMessageId, entry.bytes)
+            }
+        }
     }
 
     private fun dropSelected() {
         val entry = list.selectedValue ?: return
-        interceptController.drop(entry.heldMessageId)
         listModel.removeById(entry.heldMessageId)
+        DisplayLimit.worker.execute { interceptController.drop(entry.heldMessageId) }
     }
 }

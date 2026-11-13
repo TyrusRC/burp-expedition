@@ -1,0 +1,11 @@
+import requests
+import base64
+
+url = "https://files.example.com:8443/up"
+headers = {
+    "Content-Type": "application/octet-stream",
+}
+payload = base64.b64decode("AAECf//+YQ==")
+
+response = requests.request("PUT", url, headers=headers, data=payload)
+print(response.text)

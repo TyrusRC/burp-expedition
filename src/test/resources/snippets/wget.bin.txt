@@ -1,0 +1,6 @@
+base64 -d <<< 'AAECf//+YQ==' | wget --quiet \
+  --method 'PUT' \
+  --header 'Content-Type: application/octet-stream' \
+  --body-file=/dev/stdin \
+  -O - \
+  'https://files.example.com:8443/up'

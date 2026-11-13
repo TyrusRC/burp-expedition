@@ -32,6 +32,7 @@ class ControlApiIntegrationTest {
         matchReplace = MatchReplaceEngine()
         intercept = InterceptController()
         server = ControlApiServer(
+            authToken = TEST_TOKEN,
             host = "127.0.0.1", port = port,
             registry = registry, matchReplace = matchReplace, intercept = intercept,
             startListener = {}, stopListener = {}, runningListeners = { setOf("redis") },
@@ -43,11 +44,11 @@ class ControlApiIntegrationTest {
     fun tearDown() = server.stop()
 
     private fun get(path: String): HttpResponse<String> =
-        http.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:$port$path")).build(),
+        http.send(authed(URI.create("http://127.0.0.1:$port$path")).build(),
                   HttpResponse.BodyHandlers.ofString())
 
     private fun post(path: String, body: String): HttpResponse<String> =
-        http.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:$port$path"))
+        http.send(authed(URI.create("http://127.0.0.1:$port$path"))
             .POST(HttpRequest.BodyPublishers.ofString(body)).build(),
             HttpResponse.BodyHandlers.ofString())
 
@@ -56,6 +57,32 @@ class ControlApiIntegrationTest {
         val r = get("/status")
         assertEquals(200, r.statusCode())
         assertTrue(r.body().contains("\"running_listeners\":[\"redis\"]"), r.body())
+    }
+
+    @Test
+    fun `api and ui rule ids never collide so delete removes only the targeted rule`() {
+        val uiId = matchReplace.nextRuleId()
+        matchReplace.addRule(expedition.matchreplace.MatchReplaceRule(uiId, expedition.matchreplace.MatchType.LITERAL_STRING, "ui", "x"))
+        val add = post("/matchreplace", """{"match":"api","replace":"y"}""")
+        val apiId = Regex("\"id\":(\\d+)").find(add.body())!!.groupValues[1].toLong()
+        assertTrue(apiId != uiId, add.body())
+        http.send(authed(URI.create("http://127.0.0.1:$port/matchreplace/$apiId")).DELETE().build(),
+            HttpResponse.BodyHandlers.ofString())
+        assertEquals(listOf(uiId), matchReplace.rules().map { it.id })
+    }
+
+    @Test
+    fun `api creates and lists decoded rules and validates fields`() {
+        val add = post("/matchreplace", """{"match_type":"REGEX","match":"f.o","replace":"bar","decoded":true,"enabled":false}""")
+        assertEquals(200, add.statusCode(), add.body())
+        val rule = matchReplace.rules().single()
+        assertTrue(rule.decoded); assertTrue(!rule.enabled)
+        assertTrue(get("/matchreplace").body().contains("\"decoded\":true"))
+        assertEquals(400, post("/matchreplace", """{"match_type":"LITERAL_BYTES","match":"41","replace":"42","decoded":true}""").statusCode())
+        assertEquals(400, post("/matchreplace", """{"match_type":"BOGUS","match":"a","replace":"b"}""").statusCode())
+        assertEquals(400, post("/matchreplace", """{"match_type":"REGEX","match":"(","replace":"b"}""").statusCode())
+        assertEquals(400, post("/matchreplace", """{"match":"a","replace":"b","decoded":"yes"}""").statusCode())
+        assertEquals(1, matchReplace.rules().size)
     }
 
     @Test
@@ -94,7 +121,7 @@ class ControlApiIntegrationTest {
     /** Send a raw GET /status with extra headers; return the HTTP status line. */
     private fun rawStatusLine(vararg headers: String): String =
         java.net.Socket("127.0.0.1", port).use { s ->
-            val req = StringBuilder("GET /status HTTP/1.1\r\nHost: 127.0.0.1\r\n")
+            val req = StringBuilder("GET /status HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer $TEST_TOKEN\r\n")
             headers.forEach { req.append(it).append("\r\n") }
             req.append("Connection: close\r\n\r\n")
             s.getOutputStream().write(req.toString().toByteArray()); s.getOutputStream().flush()
@@ -116,8 +143,10 @@ class ControlApiIntegrationTest {
     }
 
     @Test
-    fun `a loopback Origin header is allowed`() {
-        assertTrue(rawStatusLine("Origin: http://127.0.0.1:$port").contains("200"))
+    fun `any browser request is refused, even from a loopback Origin`() {
+        assertTrue(rawStatusLine("Origin: http://127.0.0.1:$port").contains("403"))
+        assertTrue(rawStatusLine("Origin: null").contains("403"))
+        assertTrue(rawStatusLine("Sec-Fetch-Mode: no-cors").contains("403"))
     }
 
     @Test

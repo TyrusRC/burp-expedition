@@ -1,0 +1,12 @@
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+
+Future<void> main() async {
+  final request = http.Request('PUT', Uri.parse('https://files.example.com:8443/up'));
+  request.headers.addAll({
+    'Content-Type': 'application/octet-stream',
+  });
+  request.bodyBytes = base64Decode('AAECf//+YQ==');
+  final response = await http.Response.fromStream(await request.send());
+  print(response.body);
+}

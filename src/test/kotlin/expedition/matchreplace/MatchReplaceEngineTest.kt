@@ -10,6 +10,17 @@ import java.util.concurrent.atomic.AtomicReference
 
 class MatchReplaceEngineTest {
 
+    @Test
+    fun `nextRuleId is unique across threads and stays ahead of explicit ids`() {
+        val engine = MatchReplaceEngine()
+        engine.addRule(MatchReplaceRule(50, MatchType.LITERAL_STRING, "a", "b"))
+        val ids = java.util.concurrent.ConcurrentHashMap.newKeySet<Long>()
+        val threads = (1..4).map { Thread { repeat(500) { ids.add(engine.nextRuleId()) } } }
+        threads.forEach { it.start() }; threads.forEach { it.join() }
+        org.junit.jupiter.api.Assertions.assertEquals(2000, ids.size)
+        org.junit.jupiter.api.Assertions.assertTrue(ids.none { it <= 50 })
+    }
+
     // C1: rules must survive being modified on one thread while apply() iterates on another.
     @Test
     fun `apply is safe while rules are modified concurrently`() {

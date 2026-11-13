@@ -1,0 +1,7 @@
+library(httr)
+
+response <- VERB(
+  "GET",
+  "http://localhost:8080/ping"
+)
+cat(content(response, "text", encoding = "UTF-8"))

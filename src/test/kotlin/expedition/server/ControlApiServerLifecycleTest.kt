@@ -26,6 +26,7 @@ class ControlApiServerLifecycleTest {
         val baseline = liveApiThreads()
         val port = ServerSocket(0).use { it.localPort }
         val server = ControlApiServer(
+            authToken = TEST_TOKEN,
             host = "127.0.0.1", port = port,
             registry = ConnectionRegistry(), matchReplace = MatchReplaceEngine(),
             intercept = InterceptController(),
@@ -34,7 +35,7 @@ class ControlApiServerLifecycleTest {
         server.start()
         // Fire a request so the lazy fixed pool actually spins up at least one worker thread.
         HttpClient.newHttpClient().send(
-            HttpRequest.newBuilder(URI.create("http://127.0.0.1:$port/status")).build(),
+            authed(URI.create("http://127.0.0.1:$port/status")).build(),
             HttpResponse.BodyHandlers.ofString())
         assertTrue(liveApiThreads() > baseline, "precondition: the server should have started worker threads")
 

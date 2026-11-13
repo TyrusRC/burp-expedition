@@ -13,6 +13,9 @@ class DnsController(private val onError: (String) -> Unit = {}) {
     private var rules: List<DnsRedirector.Rule> = emptyList()
     private var defaultIp: String? = null
 
+    /** Called after a successful start with (host, port, rules, defaultIp); used to persist config. */
+    @Volatile var onChange: ((String, Int, List<DnsRedirector.Rule>, String?) -> Unit)? = null
+
     @Synchronized
     fun start(host: String, port: Int, rules: List<DnsRedirector.Rule>, defaultIp: String?): Int {
         stop()
@@ -23,6 +26,7 @@ class DnsController(private val onError: (String) -> Unit = {}) {
         this.port = s.boundPort()
         this.rules = rules
         this.defaultIp = defaultIp
+        runCatching { onChange?.invoke(host, this.port, rules, defaultIp) }
         return this.port
     }
 

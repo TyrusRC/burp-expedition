@@ -1,0 +1,3 @@
+base64 -d <<< 'AAECf//+YQ==' | curl -X PUT 'https://files.example.com:8443/up' \
+  -H 'Content-Type: application/octet-stream' \
+  --data-binary @-

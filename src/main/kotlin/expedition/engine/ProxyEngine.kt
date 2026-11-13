@@ -18,8 +18,9 @@ class ProxyEngine(
     onHeldMessage: (heldMessageId: Long, connectionId: Long, direction: Direction, bytes: ByteArray) -> Unit,
     private val onError: (listenerName: String, message: String) -> Unit,
     scriptHooks: expedition.script.ScriptHooks? = null,
+    rulesEngine: expedition.rules.RulesEngine? = null,
 ) {
-    private val messageGate = MessageGate(registry, interceptController, matchReplaceEngine, scriptHooks, onHeldMessage)
+    private val messageGate = MessageGate(registry, interceptController, matchReplaceEngine, scriptHooks, onHeldMessage).also { it.rulesEngine = rulesEngine }
     private val bossGroup = NioEventLoopGroup(1)
     private val workerGroup = NioEventLoopGroup()
     private val tcpListeners = ConcurrentHashMap<String, TcpListener>()
@@ -72,7 +73,7 @@ class ProxyEngine(
             !socksListeners.containsKey(config.name)) {
             "A listener named '${config.name}' is already running"
         }
-        val listener = Socks5Listener(config, registry, bossGroup, workerGroup, messageGate)
+        val listener = Socks5Listener(config, registry, bossGroup, workerGroup, messageGate, certificateProviderSupplier())
         listener.start().sync()
         socksListeners[config.name] = listener
     }

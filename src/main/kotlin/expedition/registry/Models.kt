@@ -13,7 +13,10 @@ data class ProxyMessage(
     val timestamp: Instant,
     val rawBytes: ByteArray,
     val dissectedView: String? = null
-)
+) {
+    /** Pipeline/rule notes (REPLACED, TIMEOUT, UNSENT, DROPPED...) are the only messages carrying a dissectedView; they are not wire traffic. */
+    val isNote: Boolean get() = dissectedView != null
+}
 
 data class ConnectionSummary(
     val connectionId: Long,
@@ -22,5 +25,7 @@ data class ConnectionSummary(
     val clientAddress: String,
     val upstreamAddress: String,
     val openedAt: Instant,
-    val closedAt: Instant? = null
+    val closedAt: Instant? = null,
+    /** True when the connection is known to be TLS (set via ConnectionRegistry.markTls); false = unknown. */
+    val tls: Boolean = false
 )

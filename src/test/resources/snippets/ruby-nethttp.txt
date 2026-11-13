@@ -1,0 +1,13 @@
+require "net/http"
+require "uri"
+
+uri = URI.parse("https://api.example.com/v1/items?x=1&y=a%20b")
+http = Net::HTTP.new(uri.host, uri.port)
+http.use_ssl = true
+request = Net::HTTP::Post.new(uri.request_uri)
+request["Content-Type"] = "application/json"
+request["X-Token"] = "a\"b$c\\d"
+request["Accept"] = "text/html, */*"
+request.body = "{\"name\":\"it's $x\",\"t\":\"é\"}\n"
+response = http.request(request)
+puts response.body

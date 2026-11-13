@@ -1,0 +1,12 @@
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let client = reqwest::Client::new();
+    let response = client
+        .request(reqwest::Method::PUT, "https://files.example.com:8443/up")
+        .header("Content-Type", "application/octet-stream")
+        .body(vec![0x00, 0x01, 0x02, 0x7f, 0xff, 0xfe, 0x61])
+        .send()
+        .await?;
+    println!("{}", response.text().await?);
+    Ok(())
+}

@@ -12,17 +12,30 @@ class MatchReplaceEngine(private val dissectorRegistry: DissectorRegistry? = nul
     // apply() a stable snapshot without locking and never throws ConcurrentModificationException.
     private val rules = CopyOnWriteArrayList<MatchReplaceRule>()
 
+    private val idGenerator = java.util.concurrent.atomic.AtomicLong(1)
+
+    /** Single, thread-safe source of rule ids shared by the UI and the Control API. */
+    fun nextRuleId(): Long = idGenerator.getAndIncrement()
+
     fun addRule(rule: MatchReplaceRule) {
+        // Keep the generator ahead of any explicitly-assigned id so later nextRuleId() can't collide.
+        idGenerator.updateAndGet { maxOf(it, rule.id + 1) }
         rules.add(rule)
+        notifyChanged()
     }
+
+    /** Invoked after the rule list changes (used to persist configuration). Must not throw. */
+    @Volatile var onChange: (() -> Unit)? = null
+    private fun notifyChanged() { runCatching { onChange?.invoke() } }
 
     fun removeRule(id: Long) {
         rules.removeAll { it.id == id }
+        notifyChanged()
     }
 
     fun rules(): List<MatchReplaceRule> = rules.toList()
 
-    fun apply(input: ByteArray): ByteArray {
+    fun apply(input: ByteArray, direction: Direction = Direction.CLIENT_TO_UPSTREAM): ByteArray {
         var current = input
         // Raw-byte rules first.
         for (rule in rules.filter { it.enabled && !it.decoded }) {
@@ -31,7 +44,7 @@ class MatchReplaceEngine(private val dissectorRegistry: DissectorRegistry? = nul
         // Decoded rules: rewrite the dissector's text view, then re-encode (fixes framing).
         val decodedRules = rules.filter { it.enabled && it.decoded }
         if (decodedRules.isNotEmpty() && dissectorRegistry != null) {
-            val message = ProxyMessage(0, 0, Direction.CLIENT_TO_UPSTREAM, Instant.now(), current)
+            val message = ProxyMessage(0, 0, direction, Instant.now(), current)
             val dissector = dissectorRegistry.dissectorFor(message)
             val before = dissector.render(message)
             var text = before
@@ -81,7 +94,7 @@ class MatchReplaceEngine(private val dissectorRegistry: DissectorRegistry? = nul
     private fun charAccessBudget(len: Int): Long =
         // Generous headroom for honest matches (linear in length) while still cutting off
         // exponential backtracking long before it becomes a stall.
-        maxOf(MIN_CHAR_BUDGET, len.toLong() * PER_CHAR_BUDGET)
+        minOf(MAX_CHAR_BUDGET, maxOf(MIN_CHAR_BUDGET, len.toLong() * PER_CHAR_BUDGET))
 
     private fun hexToBytes(hex: String): ByteArray {
         val clean = hex.replace(" ", "")
@@ -94,6 +107,8 @@ class MatchReplaceEngine(private val dissectorRegistry: DissectorRegistry? = nul
         // past these by orders of magnitude, so the cap only ever trips on a ReDoS pattern.
         const val MIN_CHAR_BUDGET = 5_000_000L
         const val PER_CHAR_BUDGET = 4_000L
+        // Absolute ceiling so a 16 MiB body cannot grant ~6e10 steps.
+        const val MAX_CHAR_BUDGET = 30_000_000L
     }
 
     private class RegexBudgetExceededException : RuntimeException()

@@ -150,6 +150,60 @@ class TcpListenerTest {
     }
 }
 
+class TcpListenerFramingTest {
+
+    private fun startedPort(listener: TcpListener) =
+        (listener.start().sync().channel().localAddress() as java.net.InetSocketAddress).port
+
+    private fun readExactly(input: java.io.InputStream, n: Int): String {
+        val buffer = ByteArray(n)
+        var total = 0
+        while (total < n) {
+            val read = input.read(buffer, total, n - total)
+            if (read < 0) break
+            total += read
+        }
+        return String(buffer, 0, total)
+    }
+
+    @Test
+    fun `delimiter framing feeds whole lines to match and replace and flushes the remainder on close`() {
+        val boss = NioEventLoopGroup(1)
+        val worker = NioEventLoopGroup()
+        val registry = ConnectionRegistry()
+        val matchReplace = MatchReplaceEngine().apply { addRule(MatchReplaceRule(1, MatchType.LITERAL_STRING, "foo", "bar")) }
+        TcpEchoServer().use { echo ->
+            val config = ListenerConfig("f1", Protocol.TCP, "127.0.0.1", 0, "127.0.0.1", echo.port,
+                framing = expedition.framing.FramingSpec.Delimiter("\n".toByteArray()))
+            val gate = MessageGate(registry, InterceptController(), matchReplace) { _, _, _, _ -> }
+            val listener = TcpListener(config, registry, boss, worker, gate)
+            try {
+                val port = startedPort(listener)
+                Socket("127.0.0.1", port).use { client ->
+                    client.tcpNoDelay = true
+                    val out = client.getOutputStream()
+                    // "foo" is split across two writes: unframed, the rule would never match.
+                    out.write("a\nfo".toByteArray()); out.flush()
+                    Thread.sleep(100)
+                    out.write("o\n".toByteArray()); out.flush()
+                    assertEquals("a\nbar\n", readExactly(client.getInputStream(), 6))
+                    out.write("tail".toByteArray()); out.flush()
+                    Thread.sleep(100)
+                }
+                waitUntil { registry.allMessages().any { it.direction == Direction.CLIENT_TO_UPSTREAM && String(it.rawBytes) == "tail" } }
+                val sent = registry.allMessages()
+                    .filter { it.direction == Direction.CLIENT_TO_UPSTREAM && it.rawBytes.isNotEmpty() }
+                    .map { String(it.rawBytes) }
+                assertEquals(listOf("a\n", "bar\n", "tail"), sent)
+            } finally {
+                listener.stop()
+                boss.shutdownGracefully().sync()
+                worker.shutdownGracefully().sync()
+            }
+        }
+    }
+}
+
 fun waitUntil(timeout: Duration = Duration.ofSeconds(5), condition: () -> Boolean) {
     val deadline = Instant.now().plus(timeout)
     while (!condition()) {

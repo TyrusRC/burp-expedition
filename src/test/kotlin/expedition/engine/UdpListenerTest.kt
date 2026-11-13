@@ -153,4 +153,31 @@ class UdpListenerTest {
         }
         group.shutdownGracefully().sync()
     }
+
+    @Test
+    fun `idle eviction closes the connection and discards held messages`() {
+        val group = NioEventLoopGroup()
+        val registry = ConnectionRegistry()
+        val intercept = InterceptController().apply { setEnabled(true) }
+        UdpEchoServer().use { echo ->
+            val config = ListenerConfig("u2", Protocol.UDP, "127.0.0.1", 0, "127.0.0.1", echo.port)
+            val gate = MessageGate(registry, intercept, MatchReplaceEngine()) { _, _, _, _ -> }
+            val listener = UdpListener(config, registry, group, gate, java.time.Duration.ofMillis(200))
+            try {
+                val port = startedPort(listener)
+                DatagramSocket().use { client ->
+                    val m = "held".toByteArray()
+                    client.send(DatagramPacket(m, m.size, InetSocketAddress("127.0.0.1", port)))
+                }
+                waitUntil { intercept.heldMessages().isNotEmpty() }
+                waitUntil { registry.allConnections().all { it.closedAt != null } && intercept.heldMessages().isEmpty() }
+                assertTrue(registry.allConnections().all { it.closedAt != null })
+                assertTrue(intercept.heldMessages().isEmpty())
+                assertEquals(0, registry.openConnectionCount())
+            } finally {
+                listener.stop()
+                group.shutdownGracefully()
+            }
+        }
+    }
 }

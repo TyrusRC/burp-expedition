@@ -20,5 +20,12 @@ data class ListenerConfig(
     val upstreamPort: Int,
     val tlsMode: TlsMode = TlsMode.NONE,
     val upstreamClientAuth: UpstreamClientAuth? = null,
-    val upstreamProxy: UpstreamProxy? = null
+    val upstreamProxy: UpstreamProxy? = null,
+    /** How each TCP direction is split into messages before the gate (UDP ignores this). */
+    val framing: expedition.framing.FramingSpec = expedition.framing.FramingSpec.Passthrough,
+    /**
+     * MITM only: SNI patterns (`host` or `*.suffix`) whose TLS is relayed raw instead of being
+     * intercepted. Empty (default) = MITM everything.
+     */
+    val tlsPassthrough: List<String> = emptyList()
 )

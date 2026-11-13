@@ -1,0 +1,10 @@
+wget --quiet \
+  --method 'POST' \
+  --header 'Content-Type: application/json' \
+  --header 'X-Token: a"b$c\d' \
+  --header 'Accept: text/html' \
+  --header 'Accept: */*' \
+  --body-data '{"name":"it'\''s $x","t":"é"}
+' \
+  -O - \
+  'https://api.example.com/v1/items?x=1&y=a%20b'

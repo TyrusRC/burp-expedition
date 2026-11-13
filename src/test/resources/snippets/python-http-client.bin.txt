@@ -1,0 +1,11 @@
+import http.client
+import base64
+
+conn = http.client.HTTPSConnection("files.example.com", 8443)
+payload = base64.b64decode("AAECf//+YQ==")
+headers = {
+    "Content-Type": "application/octet-stream",
+}
+conn.request("PUT", "/up", payload, headers)
+res = conn.getresponse()
+print(res.read().decode("utf-8"))

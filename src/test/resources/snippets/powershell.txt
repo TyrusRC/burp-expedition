@@ -1,0 +1,8 @@
+$headers = @{
+    'X-Token' = 'a"b$c\d'
+    'Accept' = 'text/html, */*'
+}
+$body = '{"name":"it''s $x","t":"é"}
+'
+$response = Invoke-WebRequest -Uri 'https://api.example.com/v1/items?x=1&y=a%20b' -Method POST -Headers $headers -ContentType 'application/json' -Body $body
+$response.Content

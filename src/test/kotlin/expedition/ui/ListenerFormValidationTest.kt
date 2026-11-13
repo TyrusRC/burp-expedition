@@ -105,3 +105,44 @@ class ListenerFormValidationTest {
         assertTrue(result.isFailure)
     }
 }
+
+class ListenerFormExtrasTest {
+    private fun v(framing: FramingForm = FramingForm(), pt: String = "", tls: TlsMode = TlsMode.NONE) =
+        ListenerFormValidation.validate("a", Protocol.TCP, "127.0.0.1", "9000", "h", "443", tls, emptySet(),
+            certificateProviderConfigured = true, framing = framing, tlsPassthrough = pt)
+
+    @org.junit.jupiter.api.Test
+    fun `delimiter framing parses escapes`() {
+        val c = v(FramingForm(type = "Delimiter", delimiter = "\\r\\n")).getOrThrow()
+        org.junit.jupiter.api.Assertions.assertTrue(c.framing is expedition.framing.FramingSpec.Delimiter)
+    }
+
+    @org.junit.jupiter.api.Test
+    fun `bad length size and empty delimiter rejected`() {
+        org.junit.jupiter.api.Assertions.assertTrue(v(FramingForm(type = "LengthPrefix", lengthSize = "5")).isFailure)
+        org.junit.jupiter.api.Assertions.assertTrue(v(FramingForm(type = "Delimiter")).isFailure)
+    }
+
+    @org.junit.jupiter.api.Test
+    fun `passthrough needs MITM and valid patterns`() {
+        org.junit.jupiter.api.Assertions.assertTrue(v(pt = "a.com").isFailure)
+        org.junit.jupiter.api.Assertions.assertEquals(listOf("a.com", "*.b.org"), v(pt = "a.com, *.b.org", tls = TlsMode.MITM).getOrThrow().tlsPassthrough)
+        org.junit.jupiter.api.Assertions.assertTrue(v(pt = "bad host!", tls = TlsMode.MITM).isFailure)
+    }
+
+    @org.junit.jupiter.api.Test
+    fun `loopback guard`() {
+        org.junit.jupiter.api.Assertions.assertTrue(ListenerFormValidation.isLoopbackBind("127.0.0.1"))
+        org.junit.jupiter.api.Assertions.assertTrue(ListenerFormValidation.isLoopbackBind("::1"))
+        org.junit.jupiter.api.Assertions.assertFalse(ListenerFormValidation.isLoopbackBind("0.0.0.0"))
+        org.junit.jupiter.api.Assertions.assertNotNull(ListenerFormValidation.nonLoopbackWarning("192.168.1.5"))
+    }
+
+    @org.junit.jupiter.api.Test
+    fun `socks5 validation`() {
+        org.junit.jupiter.api.Assertions.assertTrue(ListenerFormValidation.validateSocks5("s", "", "1080", TlsMode.STARTTLS, emptySet()).isFailure)
+        org.junit.jupiter.api.Assertions.assertTrue(ListenerFormValidation.validateSocks5("s", "", "1080", TlsMode.MITM, emptySet()).isFailure)
+        val c = ListenerFormValidation.validateSocks5("s", "", "1080", TlsMode.NONE, emptySet(), username = "u", password = "p").getOrThrow()
+        org.junit.jupiter.api.Assertions.assertTrue(c.requiresAuth)
+    }
+}
