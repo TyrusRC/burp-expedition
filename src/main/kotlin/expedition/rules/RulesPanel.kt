@@ -14,6 +14,12 @@ import javax.swing.table.AbstractTableModel
 object RulesUi {
     @Volatile var engine: RulesEngine? = null
     @Volatile var onRulesChanged: (() -> Unit)? = null
+    /** Banner shown at the top of the Rules tab (set by the extension after a project restore). */
+    @Volatile var restoreNotice: String? = null
+
+    /** Banner text for [count] rules restored from the project (always disabled), or null when none. */
+    fun restoreNoticeText(count: Int): String? =
+        if (count > 0) "$count rule${if (count == 1) "" else "s"} restored disabled \u2014 review and enable." else null
 
     /** "Create rule from selected message" for the History tab. */
     fun createFromHistoryButton(registry: ConnectionRegistry, selectedConnection: () -> Long?): JButton =
@@ -68,8 +74,18 @@ class RulesPanel(private val engine: RulesEngine, private val registry: Connecti
         }
         val help = JLabel("<html>HTTP/1.x rules (plain or TLS-MITM'd TCP listeners). First match wins; rules with only " +
             "transform/delay/breakpoint actions chain into the next matching rule. Empty list = traffic untouched.</html>")
+        val notice = RulesUi.restoreNotice?.let { text ->
+            JLabel(text).apply {
+                isOpaque = true; background = java.awt.Color(0xFFF3CD); foreground = java.awt.Color(0x664D03)
+                border = BorderFactory.createEmptyBorder(4, 8, 4, 8)
+            }
+        }
+        val top = JPanel(BorderLayout()).apply {
+            if (notice != null) add(notice, BorderLayout.NORTH)
+            add(help, BorderLayout.CENTER)
+        }
         component = JPanel(BorderLayout()).apply {
-            add(help, BorderLayout.NORTH)
+            add(top, BorderLayout.NORTH)
             add(JScrollPane(table), BorderLayout.CENTER)
             add(buttons, BorderLayout.SOUTH)
         }

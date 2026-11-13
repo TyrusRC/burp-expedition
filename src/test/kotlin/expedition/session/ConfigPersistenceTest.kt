@@ -237,6 +237,27 @@ class ConfigPersistenceTest {
     }
 
     @Test
+    fun `restore skips an http rule whose bodyFile no longer exists, with a warning, and keeps the others`() {
+        val dir = java.nio.file.Files.createTempDirectory("rules-files").toFile()
+        val old = System.getProperty("expedition.rulesFilesDir")
+        System.setProperty("expedition.rulesFilesDir", dir.path)
+        try {
+            val good = """{"id":1,"name":"ok","actions":[{"type":"mock","status":200,"body":"hi"}]}"""
+            val bad = """{"id":2,"name":"gone","actions":[{"type":"mock","status":200,"bodyFile":"missing.bin"}]}"""
+            val store = MapConfigStore(mutableMapOf(ConfigPersistence.KEY to """{"httpRules":[$good,$bad]}"""))
+            val logs = mutableListOf<String>()
+            val r = ConfigPersistence(store, { emptyList() }, { null }, { emptySet() }, log = { logs += it }).loadForRestore()
+            assertEquals(listOf("ok"), r.config.httpRules.map { it.name })
+            assertTrue(r.config.httpRules.none { it.enabled })
+            assertTrue(r.warnings.any { "gone" in it && "bodyFile" in it }, r.warnings.toString())
+            assertTrue(logs.any { "gone" in it })
+        } finally {
+            if (old == null) System.clearProperty("expedition.rulesFilesDir") else System.setProperty("expedition.rulesFilesDir", old)
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `loadForRestore on corrupt data does not throw`() {
         val store = MapConfigStore(mutableMapOf(ConfigPersistence.KEY to "{not json"))
         val r = ConfigPersistence(store, { emptyList() }, { null }, { emptySet() }).loadForRestore()

@@ -188,6 +188,14 @@ curl -s -XPOST 127.0.0.1:18112/rules/reorder -d '{"ids":[3,1,2]}'
 curl -s -XPOST 127.0.0.1:18112/rules/from-message -d '{"connection_id":12,"message_id":40}'  # mock from captured traffic
 ```
 
+**Safety flags.** Rules are inert by default: every rule is restored **disabled** from the project
+and must be reviewed and enabled by the operator (the Rules tab shows a banner when rules were
+restored). `redirect` and `webhook` never forward credentials (`Authorization`, `Cookie`, ...) unless
+`forwardCredentials` is set, and verify TLS certificates unless `insecureTls` is set; `webhook`
+also refuses loopback, link-local and private targets unless `allowLocal` is set. `bodyFile` may only read regular
+files (max 16 MiB) from `~/.expedition/rules-files`; a saved rule whose `bodyFile` no longer exists
+is **dropped on restore** with a warning in the Burp output log (the other rules are kept).
+
 Other routes: `GET|PUT|DELETE /rules/{id}`, `POST /rules/{id}/move {"to":n}`, `DELETE /rules`.
 Limitations: HTTP/1.x only, not applied to UDP or TLS-passthrough traffic, and bodies over 16 MiB are
 streamed without evaluation. While a rule is enabled for a listener, MITM offers only `http/1.1` to

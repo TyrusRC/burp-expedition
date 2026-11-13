@@ -53,3 +53,25 @@ class NoteAndImportTest {
         assertEquals(25_000, dst.allMessages().size)
     }
 }
+
+class ConcurrentImportTest {
+    @Test
+    fun `large import concurrent with live writes loses nothing and duplicates nothing`() {
+        val src = ConnectionRegistry(maxMessages = 100_000, maxBytes = Long.MAX_VALUE / 4)
+        val c = src.openConnection("l", Protocol.TCP, "c", "u")
+        repeat(20_000) { src.recordMessage(c, Direction.CLIENT_TO_UPSTREAM, "m$it".toByteArray()) }
+        val dst = ConnectionRegistry(maxMessages = 100_000, maxBytes = Long.MAX_VALUE / 4)
+        val live = dst.openConnection("live", Protocol.TCP, "c", "u")
+        val stop = java.util.concurrent.atomic.AtomicBoolean(false)
+        val written = java.util.concurrent.atomic.AtomicInteger()
+        val t = Thread { while (!stop.get()) { dst.recordMessage(live, Direction.UPSTREAM_TO_CLIENT, "live${written.get()}".toByteArray()); written.incrementAndGet() } }
+        t.start()
+        val res = dst.importSnapshot(src.allConnections(), src.allMessages())
+        stop.set(true); t.join()
+        assertEquals(20_000, res.messagesAdded)
+        assertEquals(20_000 + written.get(), dst.allMessages().size)
+        assertEquals(dst.allMessages().size, dst.allMessages().map { it.id }.toSet().size)
+        // idempotent
+        assertEquals(0, dst.importSnapshot(src.allConnections(), src.allMessages()).messagesAdded)
+    }
+}

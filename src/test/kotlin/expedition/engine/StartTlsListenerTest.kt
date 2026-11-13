@@ -70,6 +70,10 @@ class StartTlsListenerTest {
                     while (total < 6) { val r = tls.inputStream.read(buf, total, 6 - total); if (r < 0) break; total += r }
                     assertEquals("secret", String(buf))
                 }
+                // The MITM handshake must mark the connection as TLS in the registry.
+                val deadline = System.currentTimeMillis() + 3000
+                while (System.currentTimeMillis() < deadline && registry.allConnections().none { it.tls }) Thread.sleep(25)
+                assertTrue(registry.allConnections().any { it.tls }, "STARTTLS upgrade should call markTls")
             } finally {
                 listener.stop(); boss.shutdownGracefully().sync(); worker.shutdownGracefully().sync()
             }

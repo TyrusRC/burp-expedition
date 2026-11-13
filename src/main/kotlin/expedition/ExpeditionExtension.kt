@@ -82,6 +82,7 @@ class ExpeditionExtension : BurpExtension {
                 .onFailure { api.logging().logToError("Expedition: could not restore HTTP rule '${rule.name}': ${it.message}") }
         }
         val restoredRuleCount = restored.rules.size + restored.httpRules.size
+        expedition.rules.RulesUi.restoreNotice = expedition.rules.RulesUi.restoreNoticeText(restoredRuleCount)
         if (restoredRuleCount > 0) {
             api.logging().logToOutput("Expedition: $restoredRuleCount rules restored disabled — review and enable.")
         }

@@ -109,72 +109,81 @@ class ConnectionRegistry(
      * Messages whose connection is unknown are dropped. The id counters are advanced past
      * everything imported so later live traffic never collides.
      */
-    @Synchronized
     fun importSnapshot(importedConnections: List<ConnectionSummary>, importedMessages: List<ProxyMessage>): ImportResult {
-        val idMap = HashMap<Long, Long>()
-        var connsAdded = 0
-        var msgsAdded = 0
-        var skipped = 0
-        // Hash indexes make de-duplication O(n+m) instead of a scan per colliding entry.
-        val twinIndex: HashMap<ConnectionSummary, Long> by lazy {
-            HashMap<ConnectionSummary, Long>(connections.size * 2).also { m ->
-                connections.values.forEach { m.putIfAbsent(it.copy(connectionId = 0L), it.connectionId) }
+        // Phase 1 (short lock): capture what exists now.
+        val snapConns: List<ConnectionSummary>
+        val snapMsgs: List<ProxyMessage>
+        synchronized(this) { snapConns = connections.values.toList(); snapMsgs = messages.toList() }
+        // Phase 2 (NO lock): the heavy hashing. Live traffic keeps flowing meanwhile.
+        val snapConnIds = HashSet<Long>(snapConns.size * 2).also { s -> snapConns.forEach { s.add(it.connectionId) } }
+        val twinIndex = HashMap<ConnectionSummary, Long>(snapConns.size * 2)
+        snapConns.forEach { twinIndex.putIfAbsent(it.copy(connectionId = 0L), it.connectionId) }
+        val snapMsgIds = HashSet<Long>(snapMsgs.size * 2)
+        val contentKeys = HashSet<MsgKey>(snapMsgs.size * 2)
+        snapMsgs.forEach { snapMsgIds.add(it.id); contentKeys.add(MsgKey(it)) }
+        val importedHashes = IntArray(importedMessages.size) { importedMessages[it].rawBytes.contentHashCode() }
+        // Phase 3 (lock): re-check against anything that arrived since the snapshot, then insert.
+        synchronized(this) {
+            for (c in connections.values) if (c.connectionId !in snapConnIds) twinIndex.putIfAbsent(c.copy(connectionId = 0L), c.connectionId)
+            val byId = HashMap<Long, ProxyMessage>(messages.size * 2)
+            for (m in messages) {
+                byId[m.id] = m
+                if (m.id !in snapMsgIds) contentKeys.add(MsgKey(m))
             }
-        }
-        var twinReady = false
-        for (c in importedConnections) {
-            val existing = connections[c.connectionId]
-            when {
-                existing == null -> {
-                    connections[c.connectionId] = c
-                    if (twinReady) twinIndex.putIfAbsent(c.copy(connectionId = 0L), c.connectionId)
-                    idMap[c.connectionId] = c.connectionId
-                    connsAdded++
-                }
-                existing == c -> { idMap[c.connectionId] = c.connectionId; skipped++ }
-                else -> {
-                    // Same content already re-keyed by an earlier import? Then reuse it.
-                    twinReady = true
-                    val twinId = twinIndex[c.copy(connectionId = 0L)]
-                    if (twinId != null) { idMap[c.connectionId] = twinId; skipped++; continue }
-                    val fresh = nextConnectionId.getAndIncrement()
-                    connections[fresh] = c.copy(connectionId = fresh)
-                    twinIndex.putIfAbsent(c.copy(connectionId = 0L), fresh)
-                    idMap[c.connectionId] = fresh
-                    connsAdded++
+            val idMap = HashMap<Long, Long>()
+            var connsAdded = 0
+            var msgsAdded = 0
+            var skipped = 0
+            for (c in importedConnections) {
+                val existing = connections[c.connectionId]
+                when {
+                    existing == null -> {
+                        connections[c.connectionId] = c
+                        twinIndex.putIfAbsent(c.copy(connectionId = 0L), c.connectionId)
+                        idMap[c.connectionId] = c.connectionId
+                        connsAdded++
+                    }
+                    existing == c -> { idMap[c.connectionId] = c.connectionId; skipped++ }
+                    else -> {
+                        // Same content already re-keyed by an earlier import? Then reuse it.
+                        val twinId = twinIndex[c.copy(connectionId = 0L)]
+                        if (twinId != null) { idMap[c.connectionId] = twinId; skipped++; continue }
+                        val fresh = nextConnectionId.getAndIncrement()
+                        connections[fresh] = c.copy(connectionId = fresh)
+                        twinIndex.putIfAbsent(c.copy(connectionId = 0L), fresh)
+                        idMap[c.connectionId] = fresh
+                        connsAdded++
+                    }
                 }
             }
+            for ((i, m) in importedMessages.withIndex()) {
+                val connId = idMap[m.connectionId] ?: continue
+                val incoming = if (connId == m.connectionId) m else m.copy(connectionId = connId)
+                val existing = byId[m.id]
+                if (existing != null && MsgKey(incoming, importedHashes[i]) in contentKeys) { skipped++; continue }
+                val stored = if (existing == null) incoming else incoming.copy(id = nextMessageId.getAndIncrement())
+                messages.addLast(stored)
+                retainedBytes += stored.rawBytes.size
+                byId[stored.id] = stored
+                contentKeys.add(MsgKey(stored, importedHashes[i]))
+                msgsAdded++
+            }
+            evict()
+            bump(nextConnectionId, connections.keys.maxOrNull())
+            bump(nextMessageId, byId.keys.maxOrNull())
+            return ImportResult(connsAdded, msgsAdded, skipped, idMap)
         }
-        val byId = HashMap<Long, ProxyMessage>(messages.size * 2)
-        val contentKeys = HashSet<MsgKey>(messages.size * 2)
-        messages.forEach { byId[it.id] = it; contentKeys.add(MsgKey(it)) }
-        for (m in importedMessages) {
-            val connId = idMap[m.connectionId] ?: continue
-            val incoming = if (connId == m.connectionId) m else m.copy(connectionId = connId)
-            val existing = byId[m.id]
-            if (existing != null && MsgKey(incoming) in contentKeys) { skipped++; continue }
-            val stored = if (existing == null) incoming else incoming.copy(id = nextMessageId.getAndIncrement())
-            messages.addLast(stored)
-            retainedBytes += stored.rawBytes.size
-            byId[stored.id] = stored
-            contentKeys.add(MsgKey(stored))
-            msgsAdded++
-        }
-        evict()
-        bump(nextConnectionId, connections.keys.maxOrNull())
-        bump(nextMessageId, byId.keys.maxOrNull())
-        return ImportResult(connsAdded, msgsAdded, skipped, idMap)
     }
 
     /** Content identity of a message (ignores its id); equality compares the bytes by value. */
-    private class MsgKey(m: ProxyMessage) {
+    private class MsgKey(m: ProxyMessage, bytesHash: Int = m.rawBytes.contentHashCode()) {
         private val connectionId = m.connectionId
         private val direction = m.direction
         private val timestamp = m.timestamp
         private val bytes = m.rawBytes
         private val view = m.dissectedView
         private val hash = ((((connectionId.hashCode() * 31 + direction.hashCode()) * 31 + timestamp.hashCode()) * 31) +
-            bytes.contentHashCode()) * 31 + (view?.hashCode() ?: 0)
+            bytesHash) * 31 + (view?.hashCode() ?: 0)
         override fun hashCode() = hash
         override fun equals(other: Any?) = other is MsgKey && hash == other.hash && connectionId == other.connectionId &&
             direction == other.direction && timestamp == other.timestamp && bytes.contentEquals(other.bytes) && view == other.view
